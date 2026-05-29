@@ -12,6 +12,16 @@ Define the first web module structure based on the provided competitor screensho
 - Components: dense forms, tables, filters, badges, cards, modal dialogs, and sidebars.
 - Buttons should use familiar icons for add, edit, delete, save, upload, print, back, close, camera, and microphone actions.
 
+## Benchmarking Gate
+
+The frontend should not be made more similar to a competitor only from memory or screenshots. Before layout changes:
+
+- Firecrawl should collect public text and structure when credentials are available.
+- Playwright should capture the public visual flow.
+- Findings should be added to `research/feature-matrix.md`.
+- Any rule that is inferred must be marked as inference.
+- Implementation starts only after the reviewed requirements are accepted.
+
 ## Global Navigation
 
 Top navigation:
@@ -261,4 +271,3 @@ Approved reports must clearly display:
 - PDF version.
 
 Approved records are read-only. Any correction action should create a revision or amendment flow.
-

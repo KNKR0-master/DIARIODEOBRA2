@@ -13,3 +13,5 @@ Thumbs.db
 coverage/
 .vite/
 *.tsbuildinfo
+research/output/*
+!research/output/.gitkeep

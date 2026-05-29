@@ -94,6 +94,42 @@ Responsibilities:
 - Provide source references when possible.
 - Avoid inventing facts when records are missing.
 
+### Benchmark Research Skill
+
+Collects and structures competitor evidence before implementation.
+
+Responsibilities:
+
+- Use Firecrawl for public page maps, markdown content, docs, FAQs, integration pages, and feature pages.
+- Use structured extraction schemas for features, modules, flows, permissions, integrations, limitations, and benefits.
+- Store raw outputs as JSON/Markdown.
+- Preserve source URLs.
+
+### Visual Flow Analysis Skill
+
+Documents public UI behavior with Playwright.
+
+Responsibilities:
+
+- Capture screenshots.
+- Map menus, modals, filters, forms, and states.
+- Record user journeys.
+- Identify interface patterns that should become requirements.
+
+### Analytical Benchmark Skill
+
+Turns collected data into project memory.
+
+Responsibilities:
+
+- Create feature matrices.
+- Create module maps.
+- Create process flow summaries.
+- Compare systems.
+- Suggest UX/UI improvements.
+- Generate implementation backlog.
+- Mark all inferred rules as inference.
+
 ## Engineering Skills
 
 ### Backend API Skill

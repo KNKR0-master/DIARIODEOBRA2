@@ -67,6 +67,17 @@ Keeps external services behind replaceable interfaces:
 - Storage provider.
 - AI extraction provider.
 
+### Research Layer
+
+Before implementation changes that are based on competitor behavior, the project must run a research layer:
+
+- Firecrawl for public textual and structural content.
+- Playwright for visual navigation and screenshots.
+- Analyst Agent for feature matrix, flow analysis, risks, and backlog.
+- Markdown files for durable project memory.
+
+This layer is not production runtime. It is a product discovery and validation workflow.
+
 ## Data Model Groups
 
 ### Workspace
@@ -166,3 +177,14 @@ Rules:
 - `OPENAI_API_KEY`.
 - `STORAGE_BUCKET`.
 
+## Research Commands
+
+- `npm run research:firecrawl`.
+- `npm run research:playwright`.
+- `npm run research:analyze`.
+- `npm run research:all`.
+
+Required variables for real competitor collection:
+
+- `BENCHMARK_TARGET_URL`.
+- `FIRECRAWL_API_KEY` for Firecrawl.

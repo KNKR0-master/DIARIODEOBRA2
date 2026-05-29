@@ -1,0 +1,37 @@
+{
+  "type": "object",
+  "properties": {
+    "product": { "type": "string" },
+    "modules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "features": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "flow": { "type": "string" },
+                "benefit": { "type": "string" },
+                "limitation": { "type": "string" },
+                "permissions": { "type": "array", "items": { "type": "string" } },
+                "integrations": { "type": "array", "items": { "type": "string" } },
+                "businessRules": { "type": "array", "items": { "type": "string" } },
+                "sourceUrl": { "type": "string" },
+                "confidence": { "type": "string" },
+                "isInference": { "type": "boolean" }
+              },
+              "required": ["name", "sourceUrl", "confidence", "isInference"]
+            }
+          }
+        },
+        "required": ["name", "features"]
+      }
+    }
+  },
+  "required": ["product", "modules"]
+}
+

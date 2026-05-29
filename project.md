@@ -85,6 +85,17 @@ Photos are optional in the MVP. The main user or administrator should be able to
 
 PDF generation is required in the MVP after report approval. The approved PDF should include approval metadata, signature information, report ID, project, date, and generated PDF version.
 
+### Benchmarking Before Implementation
+
+Before changing layout or building new screens based on a competitor, the project should run the research workflow:
+
+- Firecrawl for public textual and structural collection.
+- Playwright for public visual flow capture.
+- Analyst Agent for feature matrix, module map, process flows, UX suggestions, risks, and backlog.
+- Markdown updates as the durable technical memory.
+
+Implementation starts only after the research findings are reviewed and accepted. Inferred business rules must be marked as inference.
+
 ## Key Product Modules
 
 ### 1. Report Chat Hub

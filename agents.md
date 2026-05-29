@@ -96,6 +96,21 @@ Responsibilities:
 - Cite the related report, date, project, or message.
 - State when information is not available.
 
+### Benchmarking Analyst Agent
+
+Transforms Firecrawl, Playwright, screenshots, and project Markdown into product requirements.
+
+Responsibilities:
+
+- Build a sourced feature matrix.
+- Map modules and user flows.
+- Compare competitor patterns with our current MVP.
+- Identify UX/UI opportunities.
+- Identify implementation risks.
+- Produce backlog candidates.
+- Mark inferred business rules as inference.
+- Update Markdown memory before frontend/backend implementation.
+
 ## System Agents
 
 ### Webhook Worker

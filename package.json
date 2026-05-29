@@ -10,7 +10,15 @@
     "dev:backend": "npm --workspace backend run dev",
     "dev:web": "npm --workspace web run dev",
     "build": "npm run build --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "research:firecrawl": "tsx scripts/research/firecrawl-map.ts",
+    "research:playwright": "tsx scripts/research/playwright-capture.ts",
+    "research:analyze": "tsx scripts/research/analyze-current-project.ts",
+    "research:all": "npm run research:firecrawl && npm run research:playwright && npm run research:analyze"
+  },
+  "devDependencies": {
+    "@mendable/firecrawl-js": "^4.25.1",
+    "playwright": "^1.60.0",
+    "tsx": "^4.22.3"
   }
 }
-

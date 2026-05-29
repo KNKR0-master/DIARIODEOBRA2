@@ -1,0 +1,10 @@
+{
+  "targets": [
+    {
+      "name": "Competitor public site",
+      "url": "https://competitor.example",
+      "notes": "Replace with the real public URL before running Firecrawl or Playwright."
+    }
+  ]
+}
+

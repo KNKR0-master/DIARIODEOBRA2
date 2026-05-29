@@ -79,13 +79,23 @@ Allow a construction company to create projects, configure report templates, rec
 
 ## Build Order
 
-1. Web shell and navigation.
-2. Project and settings screens.
-3. Backend entities and seed API.
-4. Report template and catalog APIs.
-5. Report draft and approval API.
-6. PDF placeholder.
-7. WhatsApp webhook placeholder.
-8. Audio transcription integration.
-9. Chatbot report flow.
+1. Benchmarking workflow and analytical review.
+2. Web shell and navigation.
+3. Project and settings screens.
+4. Backend entities and seed API.
+5. Report template and catalog APIs.
+6. Report draft and approval API.
+7. PDF placeholder.
+8. WhatsApp webhook placeholder.
+9. Audio transcription integration.
+10. Chatbot report flow.
 
+## Implementation Gate
+
+Before changing layout to match a competitor more closely:
+
+- Firecrawl must collect public textual/structural content when a target URL and API key are available.
+- Playwright must capture public visual flows when a target URL is available.
+- The Analyst Agent must update the feature matrix, backlog, and project Markdown files.
+- Inferred rules must be marked as inference.
+- Product owner approval is required before implementation.
