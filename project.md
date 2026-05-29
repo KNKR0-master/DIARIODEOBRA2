@@ -249,6 +249,13 @@ The first functional web/backend slice is now the RDO approval workflow:
 - Store approval metadata, virtual signature ID, reserved PDF version ID, and report hash.
 - Lock approved reports against direct edits.
 
+Stage 2 extends this with a local persisted data layer:
+
+- SQLite database stored outside Git.
+- Initial company, administrator user, and virtual signature records.
+- Persistent projects, report templates, catalogs, checklists, reports, report sections, PDF version placeholders, and audit logs.
+- Report audit history visible in the RDO detail screen.
+
 ## Future Scope
 
 - Photo analysis.

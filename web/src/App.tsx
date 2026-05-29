@@ -34,7 +34,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { api } from "./api";
-import type { CatalogItem, ChecklistTemplate, ContractType, CreateProjectPayload, Project, ProjectStatus, Report, ReportSections, ReportTemplate } from "./api";
+import type { AuditLog, CatalogItem, ChecklistTemplate, ContractType, CreateProjectPayload, Project, ProjectStatus, Report, ReportSections, ReportTemplate } from "./api";
 
 type Page = "projects" | "overview" | "reports" | "report-detail" | "analysis" | "chat" | "settings-profile" | "settings-users" | "settings-templates" | "settings-catalogs";
 
@@ -495,12 +495,32 @@ function ReportsPage({ projects, selectedProjectId, reports, onSelectProject, on
 
 function ReportDetailPage({ report, project, template, onBack, onSave, onSubmit, onApprove }: { report: Report; project?: Project; template?: ReportTemplate; onBack: () => void; onSave: (reportId: string, sections: Partial<ReportSections>) => Promise<void>; onSubmit: (reportId: string) => Promise<void>; onApprove: (reportId: string) => Promise<void> }) {
   const [sections, setSections] = useState(report.sections);
+  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
+    let active = true;
     setSections(report.sections);
+    setAuditLogs([]);
     setError("");
+
+    api
+      .getReportAudit(report.id)
+      .then((response) => {
+        if (active) {
+          setAuditLogs(response.auditLogs);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setAuditLogs([]);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
   }, [report]);
 
   const locked = report.status === "approved";
@@ -604,6 +624,14 @@ function ReportDetailPage({ report, project, template, onBack, onSave, onSubmit,
             </span>
           </div>
           <p>O PDF definitivo será gerado depois da aprovação, usando os metadados acima para rastreabilidade.</p>
+          <div className="audit-section">
+            <h3>Auditoria do relatório</h3>
+            {auditLogs.length > 0 ? (
+              auditLogs.map((log) => <TimelineItem key={log.id} label={auditEventLabel(log.eventType)} value={`${log.actorName} / ${formatDateTime(log.occurredAt)}${auditSummary(log)}`} done />)
+            ) : (
+              <span className="muted-text">Nenhum evento registrado.</span>
+            )}
+          </div>
         </aside>
       </div>
     </section>
@@ -1204,6 +1232,38 @@ function reportStatusClass(status: Report["status"]) {
   };
 
   return classes[status];
+}
+
+function auditEventLabel(eventType: string) {
+  const labels: Record<string, string> = {
+    "report.seeded": "Seed inicial",
+    "report.created": "Relatório criado",
+    "report.edited": "Relatório editado",
+    "report.submitted_for_review": "Enviado para revisão",
+    "report.approved": "Relatório aprovado",
+    "report.rejected": "Relatório rejeitado",
+    "pdf.placeholder_created": "PDF reservado"
+  };
+
+  return labels[eventType] ?? eventType;
+}
+
+function auditSummary(log: AuditLog) {
+  const changedFields = log.metadata.changedFields;
+
+  if (Array.isArray(changedFields) && changedFields.length > 0) {
+    return ` / Campos: ${changedFields.join(", ")}`;
+  }
+
+  if (typeof log.metadata.status === "string") {
+    return ` / Status: ${log.metadata.status}`;
+  }
+
+  if (typeof log.metadata.pdfVersionId === "string") {
+    return ` / PDF: ${log.metadata.pdfVersionId}`;
+  }
+
+  return "";
 }
 
 function formatDate(value: string) {

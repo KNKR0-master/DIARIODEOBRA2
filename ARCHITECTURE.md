@@ -20,6 +20,7 @@ Define the first technical structure for the construction report app.
 - TypeScript.
 - Fastify.
 - Zod for request validation.
+- SQLite through Node `node:sqlite` for the first local persistence layer.
 - Provider interfaces for WhatsApp, transcription, PDF, and storage.
 
 ### Future Infrastructure
@@ -29,14 +30,40 @@ Define the first technical structure for the construction report app.
 - Queue worker for WhatsApp media, transcription, report extraction, and PDF generation.
 - Redis for queues and short-lived processing state if needed.
 
+### Current Persistence
+
+Stage 2 uses a local SQLite database at `backend/.data/app.sqlite` by default. This file is ignored by Git.
+
+Current persisted tables:
+
+- `companies`.
+- `users`.
+- `signatures`.
+- `projects`.
+- `report_templates`.
+- `catalog_items`.
+- `checklist_templates`.
+- `checklist_items`.
+- `reports`.
+- `report_sections`.
+- `pdf_versions`.
+- `audit_logs`.
+
+The seed layer is idempotent: it inserts the default company, user, signature, project, RDO template, catalogs, checklist, and initial report only when they are missing.
+
+PostgreSQL remains the intended production database, but the current repository layer keeps SQL isolated so the application can move from SQLite to PostgreSQL later without changing the frontend contract.
+
 ## Monorepo Structure
 
 ```text
 backend/
   src/
     data/
+      database.ts
+      seed.ts
     modules/
     index.ts
+    node-sqlite.d.ts
     server.ts
     types.ts
 web/
@@ -172,6 +199,7 @@ Rules:
 
 - `PORT`.
 - `HOST`.
+- `DATABASE_PATH`.
 - `WHATSAPP_PROVIDER`.
 - `WHATSAPP_WEBHOOK_SECRET`.
 - `WHATSAPP_PHONE_NUMBER_ID`.
@@ -193,10 +221,11 @@ Required variables for real competitor collection:
 
 ## Implemented API Surface
 
-Current in-memory API routes:
+Current persisted API routes:
 
 - `GET /health`.
 - `GET /api/bootstrap`.
+- `GET /api/users`.
 - `GET /api/projects`.
 - `POST /api/projects`.
 - `GET /api/projects/:id/overview`.
@@ -207,6 +236,9 @@ Current in-memory API routes:
 - `POST /api/reports/:id/submit-review`.
 - `POST /api/reports/:id/approve`.
 - `POST /api/reports/:id/reject`.
+- `GET /api/reports/:id/audit`.
+- `GET /api/reports/:id/pdf-versions`.
+- `GET /api/audit/:entityType/:entityId`.
 - `GET /api/report-templates`.
 - `GET /api/catalogs/labor`.
 - `GET /api/catalogs/equipment`.

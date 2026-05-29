@@ -1,6 +1,8 @@
 export type ProjectStatus = "not_started" | "stalled" | "in_progress" | "completed";
 export type ContractType = "client" | "contractor" | "hired";
 export type ReportStatus = "draft" | "pending_review" | "approved" | "rejected" | "revised" | "amended";
+export type AccessProfile = "administrator" | "customized" | "field_user" | "reviewer_approver" | "client_read_only";
+export type UserStatus = "active" | "inactive";
 
 export interface Company {
   id: string;
@@ -8,6 +10,27 @@ export interface Company {
   defaultLanguage: "pt-BR";
   timezone: string;
   requirePhotosByDefault: boolean;
+}
+
+export interface User {
+  id: string;
+  companyId: string;
+  name: string;
+  email: string;
+  jobTitle: string;
+  accessProfile: AccessProfile;
+  status: UserStatus;
+  signatureId: string;
+  createdAt: string;
+}
+
+export interface Signature {
+  id: string;
+  userId: string;
+  type: "virtual" | "drawn" | "image";
+  displayName: string;
+  createdAt: string;
+  metadata: Record<string, unknown>;
 }
 
 export interface Project {
@@ -90,4 +113,25 @@ export interface Report {
   signatureId?: string;
   pdfVersionId?: string;
   hash?: string;
+}
+
+export interface AuditLog {
+  id: string;
+  entityType: "project" | "report" | "report_pdf" | "user" | "signature" | "system";
+  entityId: string;
+  eventType: string;
+  actorUserId: string;
+  actorName: string;
+  occurredAt: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface PdfVersion {
+  id: string;
+  reportId: string;
+  versionNumber: number;
+  status: "placeholder" | "generated" | "failed";
+  filePath?: string;
+  createdAt: string;
+  metadata: Record<string, unknown>;
 }

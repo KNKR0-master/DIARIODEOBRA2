@@ -94,7 +94,8 @@ Allow a construction company to create projects, configure report templates, rec
 
 - Completed: benchmarking workflow, web shell, project/settings prototype, seed APIs, report template/catalog APIs, and the first functional RDO workflow.
 - The functional RDO workflow now supports create draft, edit sections, send to review, approve, store approval metadata, generate a virtual signature ID, reserve a PDF version ID, calculate a report hash, and block edits after approval.
-- The current storage is still in-memory seed data. Database persistence, real users/permissions, real PDF generation, audit log persistence, WhatsApp intake, and audio transcription remain next-stage work.
+- Stage 2 now adds local SQLite persistence, initial user/signature records, report section storage, audit log persistence, and PDF version placeholders.
+- Real authentication, permission enforcement, real PDF generation, WhatsApp intake, and audio transcription remain next-stage work.
 
 ## Implementation Gate
 

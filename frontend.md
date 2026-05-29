@@ -283,5 +283,6 @@ The first implemented frontend wireframe is now:
 5. RDO detail/editor with weather, labor, equipment, activities, occurrences, checklist notes, and comments.
 6. Lifecycle buttons: save draft, send to review, approve report.
 7. Approved report lock state with creator, approver, creation time, approval time, virtual signature ID, PDF version ID, and hash prefix.
+8. Report audit panel showing persisted lifecycle events from the backend.
 
 This is the first functional product structure. It is intentionally not the final UI.

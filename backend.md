@@ -279,3 +279,23 @@ The first functional backend workflow is in-memory and supports:
 - Blocking edits to approved reports with HTTP `409`.
 
 The next backend stage should move reports, projects, templates, users, signatures, and audit events from seed arrays to a database-backed persistence layer.
+
+## Stage 2 Persistence Baseline
+
+Stage 2 replaces the runtime seed arrays with a local SQLite persistence layer using Node `node:sqlite`.
+
+Implemented:
+
+- Idempotent database initialization at `backend/.data/app.sqlite`.
+- Persisted company, initial administrator user, virtual signature, project, RDO template, catalogs, checklist, reports, report sections, PDF versions, and audit logs.
+- Report lifecycle writes audit events for creation, edits, submission to review, approval, rejection, and PDF placeholder creation.
+- Approved reports remain immutable and still return HTTP `409` on direct edits.
+- Approval creates a persistent PDF version placeholder with status `placeholder`.
+- API endpoints expose report audit history and PDF versions.
+
+Still pending in Stage 2:
+
+- Real authentication/session handling.
+- Full role permission enforcement.
+- Real PDF file generation and storage.
+- Migration/versioning framework for production database evolution.

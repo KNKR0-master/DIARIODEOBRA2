@@ -61,6 +61,27 @@ export interface Report {
   hash?: string;
 }
 
+export interface AuditLog {
+  id: string;
+  entityType: "project" | "report" | "report_pdf" | "user" | "signature" | "system";
+  entityId: string;
+  eventType: string;
+  actorUserId: string;
+  actorName: string;
+  occurredAt: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface PdfVersion {
+  id: string;
+  reportId: string;
+  versionNumber: number;
+  status: "placeholder" | "generated" | "failed";
+  filePath?: string;
+  createdAt: string;
+  metadata: Record<string, unknown>;
+}
+
 export interface CatalogItem {
   id: string;
   description: string;
@@ -171,6 +192,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ approverUserId: "user-joao", approverName: "JOAO VICTOR" })
     });
+  },
+
+  async getReportAudit(id: string) {
+    return request<{ auditLogs: AuditLog[] }>(`/api/reports/${id}/audit`);
+  },
+
+  async getReportPdfVersions(id: string) {
+    return request<{ pdfVersions: PdfVersion[] }>(`/api/reports/${id}/pdf-versions`);
   },
 
   async getReportTemplates() {

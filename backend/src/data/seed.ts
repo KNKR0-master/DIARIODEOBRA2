@@ -1,4 +1,4 @@
-import type { CatalogItem, ChecklistTemplate, Company, Project, Report, ReportTemplate } from "../types.js";
+import type { CatalogItem, ChecklistTemplate, Company, Project, Report, ReportTemplate, Signature, User } from "../types.js";
 
 export const company: Company = {
   id: "company-tt-home",
@@ -7,6 +7,34 @@ export const company: Company = {
   timezone: "America/Sao_Paulo",
   requirePhotosByDefault: false
 };
+
+export const signatures: Signature[] = [
+  {
+    id: "sig-user-joao-virtual",
+    userId: "user-joao",
+    type: "virtual",
+    displayName: "Assinatura virtual - JOAO VICTOR",
+    createdAt: "2026-05-12T12:00:00-03:00",
+    metadata: {
+      source: "seed",
+      trustModel: "user_id_and_approval_timestamp"
+    }
+  }
+];
+
+export const users: User[] = [
+  {
+    id: "user-joao",
+    companyId: company.id,
+    name: "JOAO VICTOR",
+    email: "joaovictor.castro@tthome.com.br",
+    jobTitle: "SOCIO PROPRIETARIO",
+    accessProfile: "administrator",
+    status: "active",
+    signatureId: "sig-user-joao-virtual",
+    createdAt: "2026-05-12T12:00:00-03:00"
+  }
+];
 
 export const projects: Project[] = [
   {

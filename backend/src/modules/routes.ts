@@ -1,8 +1,13 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
-import { checklists, company, equipment, labor, occurrenceTypes, projects, reports, reportTemplates } from "../data/seed.js";
-import type { ContractType, ProjectStatus, Report, ReportSections } from "../types.js";
+import { database } from "../data/database.js";
+import type { AuditLog, ContractType, PdfVersion, Project, ProjectStatus, Report, ReportSections } from "../types.js";
+
+const defaultActor = {
+  actorUserId: "user-joao",
+  actorName: "JOAO VICTOR"
+};
 
 const createProjectSchema = z.object({
   name: z.string().min(1),
@@ -61,10 +66,6 @@ const emptySections = (): ReportSections => ({
 
 const nowIso = () => new Date().toISOString();
 
-const nextReportNumber = () => Math.max(0, ...reports.map((report) => report.number)) + 1;
-
-const findReport = (id: string) => reports.find((report) => report.id === id);
-
 const buildReportHash = (report: Report) =>
   createHash("sha256")
     .update(
@@ -87,32 +88,37 @@ const buildReportHash = (report: Report) =>
     .digest("hex");
 
 export async function registerRoutes(app: FastifyInstance) {
-  app.get("/health", async () => ({
-    ok: true,
-    service: "construction-report-backend",
-    language: company.defaultLanguage
-  }));
+  app.get("/health", async () => {
+    const company = database.getCompany();
+
+    return {
+      ok: true,
+      service: "construction-report-backend",
+      language: company.defaultLanguage,
+      persistence: "sqlite"
+    };
+  });
 
   app.get("/api/bootstrap", async () => ({
-    company,
-    counts: {
-      projects: projects.length,
-      reports: reports.length,
-      reportTemplates: reportTemplates.length,
-      labor: labor.length,
-      equipment: equipment.length,
-      occurrenceTypes: occurrenceTypes.length,
-      checklists: checklists.length
-    }
+    company: database.getCompany(),
+    counts: database.getCounts()
   }));
 
-  app.get("/api/projects", async () => ({ projects }));
+  app.get("/api/users", async () => ({ users: database.listUsers() }));
+
+  app.get("/api/projects", async () => ({ projects: database.listProjects() }));
 
   app.post("/api/projects", async (request, reply) => {
-    const payload = createProjectSchema.parse(request.body);
-    const project = {
-      id: `project-${projects.length + 1}`,
-      companyId: company.id,
+    const parsedBody = createProjectSchema.safeParse(request.body);
+
+    if (!parsedBody.success) {
+      return reply.code(400).send({ error: "Invalid project payload", details: parsedBody.error.flatten() });
+    }
+
+    const payload = parsedBody.data;
+    const project: Project = {
+      id: `project-${Date.now()}`,
+      companyId: database.getCompany().id,
       name: payload.name,
       status: payload.status as ProjectStatus,
       group: payload.group,
@@ -127,27 +133,26 @@ export async function registerRoutes(app: FastifyInstance) {
       requirePhotos: payload.requirePhotos
     };
 
-    projects.push(project);
-    return reply.code(201).send({ project });
+    return reply.code(201).send({ project: database.createProject(project, defaultActor) });
   });
 
   app.get("/api/projects/:id/overview", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const project = projects.find((item) => item.id === id);
+    const project = database.getProject(id);
 
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
     }
 
-    const projectReports = reports.filter((report) => report.projectId === id);
+    const projectReports = database.listReports({ projectId: id });
 
     return {
       project,
       counters: {
         reports: projectReports.length,
-        activities: 0,
-        occurrences: 0,
-        comments: 0,
+        activities: projectReports.filter((report) => report.sections.activities.trim()).length,
+        occurrences: projectReports.filter((report) => report.sections.occurrences.trim()).length,
+        comments: projectReports.filter((report) => report.sections.comments.trim()).length,
         photos: 0,
         videos: 0
       },
@@ -158,19 +163,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.get("/api/reports", async (request) => {
     const query = request.query as { projectId?: string; status?: string };
-    let filteredReports = [...reports];
-
-    if (query.projectId) {
-      filteredReports = filteredReports.filter((report) => report.projectId === query.projectId);
-    }
-
-    if (query.status) {
-      filteredReports = filteredReports.filter((report) => report.status === query.status);
-    }
-
-    filteredReports.sort((a, b) => b.reportDate.localeCompare(a.reportDate) || b.number - a.number);
-
-    return { reports: filteredReports };
+    return { reports: database.listReports({ projectId: query.projectId, status: query.status }) };
   });
 
   app.post("/api/reports", async (request, reply) => {
@@ -181,8 +174,8 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const payload = parsedBody.data;
-    const project = projects.find((item) => item.id === payload.projectId);
-    const template = reportTemplates.find((item) => item.id === payload.templateId);
+    const project = database.getProject(payload.projectId);
+    const template = database.getReportTemplate(payload.templateId);
 
     if (!project) {
       return reply.code(404).send({ error: "Project not found" });
@@ -192,11 +185,9 @@ export async function registerRoutes(app: FastifyInstance) {
       return reply.code(404).send({ error: "Report template not found" });
     }
 
-    const lastReport = [...reports]
-      .filter((report) => report.projectId === payload.projectId)
-      .sort((a, b) => b.reportDate.localeCompare(a.reportDate) || b.number - a.number)[0];
-
-    const number = nextReportNumber();
+    const currentUser = database.getUser(defaultActor.actorUserId);
+    const lastReport = database.getLastReport(payload.projectId);
+    const number = database.nextReportNumber();
     const report: Report = {
       id: `report-${number}-${Date.now()}`,
       number,
@@ -204,19 +195,18 @@ export async function registerRoutes(app: FastifyInstance) {
       templateId: payload.templateId,
       reportDate: payload.reportDate,
       status: "draft",
-      creatorUserId: "user-joao",
-      creatorName: "JOAO VICTOR",
+      creatorUserId: currentUser?.id ?? defaultActor.actorUserId,
+      creatorName: currentUser?.name ?? defaultActor.actorName,
       createdAt: nowIso(),
       sections: payload.copyFromLast && lastReport ? { ...lastReport.sections } : emptySections()
     };
 
-    reports.push(report);
-    return reply.code(201).send({ report });
+    return reply.code(201).send({ report: database.createReport(report, defaultActor) });
   });
 
   app.get("/api/reports/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const report = findReport(id);
+    const report = database.getReport(id);
 
     if (!report) {
       return reply.code(404).send({ error: "Report not found" });
@@ -227,7 +217,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.patch("/api/reports/:id", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const report = findReport(id);
+    const report = database.getReport(id);
 
     if (!report) {
       return reply.code(404).send({ error: "Report not found" });
@@ -243,21 +233,22 @@ export async function registerRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "Invalid report update payload", details: parsedBody.error.flatten() });
     }
 
-    report.sections = {
-      ...report.sections,
-      ...parsedBody.data.sections
+    const changedFields = Object.keys(parsedBody.data.sections);
+    const updatedReport: Report = {
+      ...report,
+      status: report.status === "pending_review" ? "revised" : report.status,
+      sections: {
+        ...report.sections,
+        ...parsedBody.data.sections
+      }
     };
 
-    if (report.status === "pending_review") {
-      report.status = "revised";
-    }
-
-    return { report };
+    return { report: database.updateReportSections(updatedReport, defaultActor, changedFields) };
   });
 
   app.post("/api/reports/:id/submit-review", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const report = findReport(id);
+    const report = database.getReport(id);
 
     if (!report) {
       return reply.code(404).send({ error: "Report not found" });
@@ -271,15 +262,18 @@ export async function registerRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: `Report cannot be submitted from status ${report.status}` });
     }
 
-    report.status = "pending_review";
-    report.submittedAt = nowIso();
+    const updatedReport: Report = {
+      ...report,
+      status: "pending_review",
+      submittedAt: nowIso()
+    };
 
-    return { report };
+    return { report: database.submitReport(updatedReport, defaultActor) };
   });
 
   app.post("/api/reports/:id/approve", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const report = findReport(id);
+    const report = database.getReport(id);
 
     if (!report) {
       return reply.code(404).send({ error: "Report not found" });
@@ -299,20 +293,46 @@ export async function registerRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "Invalid approval payload", details: parsedBody.error.flatten() });
     }
 
-    report.status = "approved";
-    report.approverUserId = parsedBody.data.approverUserId;
-    report.approverName = parsedBody.data.approverName;
-    report.approvedAt = nowIso();
-    report.signatureId = `sig-${report.approverUserId}-${report.approvedAt.replace(/\D/g, "").slice(0, 14)}`;
-    report.pdfVersionId = `pdf-${report.id}-v1`;
-    report.hash = buildReportHash(report);
+    const approver = database.getUser(parsedBody.data.approverUserId);
+    const approvedAt = nowIso();
+    const versionNumber = database.nextPdfVersionNumber(report.id);
+    const pdfVersionId = `pdf-${report.id}-v${versionNumber}`;
+    const approvedReport: Report = {
+      ...report,
+      status: "approved",
+      approverUserId: approver?.id ?? parsedBody.data.approverUserId,
+      approverName: approver?.name ?? parsedBody.data.approverName,
+      approvedAt,
+      signatureId: approver?.signatureId ?? `sig-${parsedBody.data.approverUserId}-${approvedAt.replace(/\D/g, "").slice(0, 14)}`,
+      pdfVersionId
+    };
 
-    return { report };
+    approvedReport.hash = buildReportHash(approvedReport);
+
+    const pdfVersion: PdfVersion = {
+      id: pdfVersionId,
+      reportId: report.id,
+      versionNumber,
+      status: "placeholder",
+      createdAt: approvedAt,
+      metadata: {
+        provider: "pending",
+        reason: "PDF provider will be attached after persistence and audit base",
+        reportHash: approvedReport.hash
+      }
+    };
+
+    return {
+      report: database.approveReport(approvedReport, pdfVersion, {
+        actorUserId: approvedReport.approverUserId ?? defaultActor.actorUserId,
+        actorName: approvedReport.approverName ?? defaultActor.actorName
+      })
+    };
   });
 
   app.post("/api/reports/:id/reject", async (request, reply) => {
     const { id } = request.params as { id: string };
-    const report = findReport(id);
+    const report = database.getReport(id);
 
     if (!report) {
       return reply.code(404).send({ error: "Report not found" });
@@ -328,21 +348,60 @@ export async function registerRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "Invalid rejection payload", details: parsedBody.error.flatten() });
     }
 
-    report.status = "rejected";
-    report.sections.comments = [report.sections.comments, parsedBody.data.reason].filter(Boolean).join("\n\nRevisao: ");
+    const updatedReport: Report = {
+      ...report,
+      status: "rejected",
+      sections: {
+        ...report.sections,
+        comments: [report.sections.comments, parsedBody.data.reason].filter(Boolean).join("\n\nRevisao: ")
+      }
+    };
 
-    return { report };
+    return { report: database.rejectReport(updatedReport, defaultActor, parsedBody.data.reason) };
   });
 
-  app.get("/api/report-templates", async () => ({ reportTemplates }));
+  app.get("/api/reports/:id/audit", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const report = database.getReport(id);
 
-  app.get("/api/catalogs/labor", async () => ({ labor }));
+    if (!report) {
+      return reply.code(404).send({ error: "Report not found" });
+    }
 
-  app.get("/api/catalogs/equipment", async () => ({ equipment }));
+    return { auditLogs: database.listAuditLogs("report", id) };
+  });
 
-  app.get("/api/catalogs/occurrence-types", async () => ({ occurrenceTypes }));
+  app.get("/api/reports/:id/pdf-versions", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const report = database.getReport(id);
 
-  app.get("/api/catalogs/checklists", async () => ({ checklists }));
+    if (!report) {
+      return reply.code(404).send({ error: "Report not found" });
+    }
+
+    return { pdfVersions: database.listPdfVersions(id) };
+  });
+
+  app.get("/api/audit/:entityType/:entityId", async (request, reply) => {
+    const { entityType, entityId } = request.params as { entityType: AuditLog["entityType"]; entityId: string };
+    const allowedTypes: AuditLog["entityType"][] = ["project", "report", "report_pdf", "user", "signature", "system"];
+
+    if (!allowedTypes.includes(entityType)) {
+      return reply.code(400).send({ error: "Invalid audit entity type" });
+    }
+
+    return { auditLogs: database.listAuditLogs(entityType, entityId) };
+  });
+
+  app.get("/api/report-templates", async () => ({ reportTemplates: database.listReportTemplates() }));
+
+  app.get("/api/catalogs/labor", async () => ({ labor: database.listCatalog("labor") }));
+
+  app.get("/api/catalogs/equipment", async () => ({ equipment: database.listCatalog("equipment") }));
+
+  app.get("/api/catalogs/occurrence-types", async () => ({ occurrenceTypes: database.listCatalog("occurrence_type") }));
+
+  app.get("/api/catalogs/checklists", async () => ({ checklists: database.listChecklists() }));
 
   app.post("/api/whatsapp/webhook", async (request, reply) => {
     return reply.code(202).send({
