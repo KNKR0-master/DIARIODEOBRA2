@@ -45,7 +45,13 @@ import type {
   Project,
   ProjectStatus,
   Report,
+  ReportChecklistResponse,
+  ReportEquipmentEntry,
+  ReportLaborEntry,
+  ReportOccurrenceEntry,
   ReportSections,
+  ReportStructuredData,
+  ReportTask,
   ReportTemplate,
   ReportTemplatePayload,
   User as AppUser,
@@ -59,6 +65,10 @@ type Page =
   | "reports"
   | "report-detail"
   | "analysis"
+  | "analysis-created"
+  | "analysis-pending"
+  | "analysis-tasks"
+  | "analysis-inserted"
   | "chat"
   | "settings-profile"
   | "settings-company"
@@ -112,9 +122,15 @@ const reportFields: Array<{ key: keyof ReportSections; item: string; label: stri
 
 const menuItems = [
   { page: "projects" as Page, label: "Obras", icon: Building2 },
-  { page: "reports" as Page, label: "Relatórios", icon: ClipboardList },
-  { page: "analysis" as Page, label: "Análise de dados", icon: BarChart3 },
-  { page: "settings-profile" as Page, label: "Cadastros", icon: Settings }
+  { page: "reports" as Page, label: "Relatórios", icon: ClipboardList }
+];
+
+const analysisItems = [
+  { page: "analysis" as Page, label: "Visão geral" },
+  { page: "analysis-created" as Page, label: "Relatórios criados" },
+  { page: "analysis-pending" as Page, label: "Aguardando informações" },
+  { page: "analysis-tasks" as Page, label: "Lista de tarefas" },
+  { page: "analysis-inserted" as Page, label: "Dados inseridos nos relatórios" }
 ];
 
 const settingsItems = [
@@ -216,8 +232,8 @@ function App() {
     setPage("report-detail");
   }
 
-  async function handleUpdateReport(reportId: string, sections: Partial<ReportSections>) {
-    const response = await api.updateReport(reportId, sections);
+  async function handleUpdateReport(reportId: string, sections: Partial<ReportSections>, structuredData: ReportStructuredData) {
+    const response = await api.updateReport(reportId, { sections, structuredData });
     upsertReport(response.report);
   }
 
@@ -245,6 +261,10 @@ function App() {
     const response = item ? await api.updateCatalogItem(kind, item.id, payload) : await api.createCatalogItem(kind, payload);
     const setMap = { labor: setLabor, equipment: setEquipment, occurrences: setOccurrences };
     setMap[kind]((current) => [response.item, ...current.filter((entry) => entry.id !== response.item.id)].sort((a, b) => a.description.localeCompare(b.description)));
+  }
+
+  async function handleToggleCatalog(kind: CatalogKind, item: CatalogItem, active: boolean) {
+    await handleSaveCatalog(kind, { description: item.description, group: item.group, sourceType: item.sourceType, status: active ? "active" : "inactive" }, item);
   }
 
   async function handleSaveChecklist(payload: ChecklistPayload, checklist?: ChecklistTemplate) {
@@ -327,6 +347,7 @@ function App() {
             checklists={checklists}
             projects={projects}
             onOpenModal={setModal}
+            onToggleCatalog={handleToggleCatalog}
           />
         ) : page === "overview" && selectedProject ? (
           <ProjectOverview
@@ -364,8 +385,8 @@ function App() {
             onSubmit={handleSubmitReport}
             onApprove={handleApproveReport}
           />
-        ) : page === "analysis" ? (
-          <AnalysisPage reports={reports} />
+        ) : page.startsWith("analysis") ? (
+          <AnalysisPage view={page} reports={reports} projects={projects} onOpenReport={openReport} />
         ) : page === "chat" ? (
           <ChatHubPage selectedProject={selectedProject} />
         ) : (
@@ -395,7 +416,7 @@ function TopNav({ activePage, onNavigate, onCreate }: { activePage: Page; onNavi
       <div className="brand">TT HOME LTDA</div>
       <nav className="top-menu">
         {menuItems.map((item) => {
-          const isActive = activePage === item.page || (item.page === "settings-profile" && activePage.startsWith("settings"));
+          const isActive = activePage === item.page;
           return (
             <button className={isActive ? "nav-item active" : "nav-item"} key={item.page} onClick={() => onNavigate(item.page)}>
               <item.icon size={16} />
@@ -403,6 +424,24 @@ function TopNav({ activePage, onNavigate, onCreate }: { activePage: Page; onNavi
             </button>
           );
         })}
+        <div className="nav-dropdown">
+          <button className={activePage.startsWith("analysis") ? "nav-item active" : "nav-item"} onClick={() => onNavigate("analysis")}>
+            <BarChart3 size={16} />
+            Análise de dados
+          </button>
+          <div className="nav-dropdown-menu">
+            {analysisItems.map((item) => <button key={item.page} onClick={() => onNavigate(item.page)}>{item.label}</button>)}
+          </div>
+        </div>
+        <div className="nav-dropdown">
+          <button className={activePage.startsWith("settings") ? "nav-item active" : "nav-item"} onClick={() => onNavigate("settings-profile")}>
+            <Settings size={16} />
+            Cadastros
+          </button>
+          <div className="nav-dropdown-menu">
+            {settingsItems.map((item) => <button key={item.page} onClick={() => onNavigate(item.page)}>{item.label}</button>)}
+          </div>
+        </div>
         <button className={activePage === "chat" ? "nav-item active" : "nav-item"} onClick={() => onNavigate("chat")}>
           <Bot size={16} />
           Chat RDO
@@ -648,8 +687,9 @@ function ReportsPage({ projects, selectedProjectId, reports, onSelectProject, on
   );
 }
 
-function ReportDetailPage({ report, project, template, labor, equipment, occurrences, checklists, onBack, onSave, onSubmit, onApprove }: { report: Report; project?: Project; template?: ReportTemplate; labor: CatalogItem[]; equipment: CatalogItem[]; occurrences: CatalogItem[]; checklists: ChecklistTemplate[]; onBack: () => void; onSave: (reportId: string, sections: Partial<ReportSections>) => Promise<void>; onSubmit: (reportId: string) => Promise<void>; onApprove: (reportId: string) => Promise<void> }) {
+function ReportDetailPage({ report, project, template, labor, equipment, occurrences, checklists, onBack, onSave, onSubmit, onApprove }: { report: Report; project?: Project; template?: ReportTemplate; labor: CatalogItem[]; equipment: CatalogItem[]; occurrences: CatalogItem[]; checklists: ChecklistTemplate[]; onBack: () => void; onSave: (reportId: string, sections: Partial<ReportSections>, structuredData: ReportStructuredData) => Promise<void>; onSubmit: (reportId: string) => Promise<void>; onApprove: (reportId: string) => Promise<void> }) {
   const [sections, setSections] = useState(report.sections);
+  const [structuredData, setStructuredData] = useState(report.structuredData);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -657,6 +697,7 @@ function ReportDetailPage({ report, project, template, labor, equipment, occurre
   useEffect(() => {
     let active = true;
     setSections(report.sections);
+    setStructuredData(report.structuredData);
     setAuditLogs([]);
     setError("");
     api
@@ -669,7 +710,7 @@ function ReportDetailPage({ report, project, template, labor, equipment, occurre
   }, [report]);
 
   const enabledItems = template?.enabledItems ?? reportItemOptions.map(([value]) => value);
-  const visibleFields = reportFields.filter((field) => enabledItems.includes(field.item));
+  const visibleFields = reportFields.filter((field) => enabledItems.includes(field.item) && !["labor", "equipment", "occurrence", "checklist"].includes(field.item));
   const locked = report.status === "approved";
   const canSubmit = report.status === "draft" || report.status === "rejected" || report.status === "revised";
   const canApprove = report.status === "pending_review";
@@ -688,6 +729,10 @@ function ReportDetailPage({ report, project, template, labor, equipment, occurre
 
   const changeSection = (key: keyof ReportSections, value: string) => {
     setSections((current) => ({ ...current, [key]: value }));
+  };
+
+  const updateStructuredData = (updates: Partial<ReportStructuredData>) => {
+    setStructuredData((current) => ({ ...current, ...updates }));
   };
 
   return (
@@ -724,8 +769,19 @@ function ReportDetailPage({ report, project, template, labor, equipment, occurre
               </label>
             ))}
           </div>
+          <StructuredReportEditor
+            reportId={report.id}
+            locked={locked}
+            enabledItems={enabledItems}
+            structuredData={structuredData}
+            labor={labor}
+            equipment={equipment}
+            occurrences={occurrences}
+            checklists={checklists}
+            onChange={updateStructuredData}
+          />
           <div className="button-row">
-            <button className="secondary-action" disabled={locked || Boolean(busy)} onClick={() => void runAction("save", () => onSave(report.id, sections))}>
+            <button className="secondary-action" disabled={locked || Boolean(busy)} onClick={() => void runAction("save", () => onSave(report.id, sections, structuredData))}>
               <Save size={17} />
               {busy === "save" ? "Salvando..." : "Salvar rascunho"}
             </button>
@@ -766,7 +822,132 @@ function ReportDetailPage({ report, project, template, labor, equipment, occurre
   );
 }
 
-function SettingsLayout({ activePage, onNavigate, users, templates, labor, equipment, occurrences, checklists, projects, onOpenModal }: { activePage: Page; onNavigate: (page: Page) => void; users: AppUser[]; templates: ReportTemplate[]; labor: CatalogItem[]; equipment: CatalogItem[]; occurrences: CatalogItem[]; checklists: ChecklistTemplate[]; projects: Project[]; onOpenModal: (modal: ModalState) => void }) {
+function StructuredReportEditor({
+  reportId,
+  locked,
+  enabledItems,
+  structuredData,
+  labor,
+  equipment,
+  occurrences,
+  checklists,
+  onChange
+}: {
+  reportId: string;
+  locked: boolean;
+  enabledItems: readonly string[];
+  structuredData: ReportStructuredData;
+  labor: CatalogItem[];
+  equipment: CatalogItem[];
+  occurrences: CatalogItem[];
+  checklists: ChecklistTemplate[];
+  onChange: (updates: Partial<ReportStructuredData>) => void;
+}) {
+  const activeLabor = labor.filter((item) => item.status === "active");
+  const activeEquipment = equipment.filter((item) => item.status === "active");
+  const activeOccurrences = occurrences.filter((item) => item.status === "active");
+  const activeChecklists = checklists.filter((item) => item.status === "active");
+
+  const [laborDraft, setLaborDraft] = useState({ catalogItemId: activeLabor[0]?.id ?? "", description: "", quantity: 1, unit: "profissionais", notes: "" });
+  const [equipmentDraft, setEquipmentDraft] = useState({ catalogItemId: activeEquipment[0]?.id ?? "", description: "", quantity: 1, hours: 0, notes: "" });
+  const [occurrenceDraft, setOccurrenceDraft] = useState({ catalogItemId: activeOccurrences[0]?.id ?? "", description: "", severity: "info" as ReportOccurrenceEntry["severity"], notes: "" });
+  const [taskDraft, setTaskDraft] = useState({ description: "", status: "pending" as ReportTask["status"], owner: "", dueDate: "" });
+
+  const addLabor = () => {
+    const catalog = activeLabor.find((item) => item.id === laborDraft.catalogItemId);
+    const description = laborDraft.description.trim() || catalog?.description || "";
+    if (!description) return;
+    const entry: ReportLaborEntry = { id: makeLocalId("labor"), reportId, catalogItemId: catalog?.id, description, quantity: Number(laborDraft.quantity) || 0, unit: laborDraft.unit || "profissionais", notes: laborDraft.notes };
+    onChange({ laborEntries: [...structuredData.laborEntries, entry] });
+    setLaborDraft((current) => ({ ...current, description: "", quantity: 1, notes: "" }));
+  };
+
+  const addEquipment = () => {
+    const catalog = activeEquipment.find((item) => item.id === equipmentDraft.catalogItemId);
+    const description = equipmentDraft.description.trim() || catalog?.description || "";
+    if (!description) return;
+    const entry: ReportEquipmentEntry = { id: makeLocalId("equipment"), reportId, catalogItemId: catalog?.id, description, quantity: Number(equipmentDraft.quantity) || 0, hours: Number(equipmentDraft.hours) || 0, notes: equipmentDraft.notes };
+    onChange({ equipmentEntries: [...structuredData.equipmentEntries, entry] });
+    setEquipmentDraft((current) => ({ ...current, description: "", quantity: 1, hours: 0, notes: "" }));
+  };
+
+  const addOccurrence = () => {
+    const catalog = activeOccurrences.find((item) => item.id === occurrenceDraft.catalogItemId);
+    const description = occurrenceDraft.description.trim() || catalog?.description || "";
+    if (!description) return;
+    const entry: ReportOccurrenceEntry = { id: makeLocalId("occurrence"), reportId, catalogItemId: catalog?.id, description, severity: occurrenceDraft.severity, notes: occurrenceDraft.notes };
+    onChange({ occurrenceEntries: [...structuredData.occurrenceEntries, entry] });
+    setOccurrenceDraft((current) => ({ ...current, description: "", severity: "info", notes: "" }));
+  };
+
+  const addTask = () => {
+    const description = taskDraft.description.trim();
+    if (!description) return;
+    const task: ReportTask = { id: makeLocalId("task"), reportId, description, status: taskDraft.status, owner: taskDraft.owner, dueDate: taskDraft.dueDate };
+    onChange({ tasks: [...structuredData.tasks, task] });
+    setTaskDraft({ description: "", status: "pending", owner: "", dueDate: "" });
+  };
+
+  const upsertChecklistResponse = (response: ReportChecklistResponse) => {
+    onChange({ checklistResponses: [response, ...structuredData.checklistResponses.filter((item) => item.checklistItemId !== response.checklistItemId)] });
+  };
+
+  return (
+    <div className="structured-editor">
+      {enabledItems.includes("labor") && (
+        <StructuredPanel title="Mão de obra">
+          {!locked && <div className="structured-form-row"><select value={laborDraft.catalogItemId} onChange={(event) => setLaborDraft((current) => ({ ...current, catalogItemId: event.target.value }))}>{activeLabor.map((item) => <option value={item.id} key={item.id}>{item.description}</option>)}</select><input placeholder="Ou nova função" value={laborDraft.description} onChange={(event) => setLaborDraft((current) => ({ ...current, description: event.target.value }))} /><input type="number" min="0" value={laborDraft.quantity} onChange={(event) => setLaborDraft((current) => ({ ...current, quantity: Number(event.target.value) }))} /><button className="small-primary" type="button" onClick={addLabor}><Plus size={15} />Adicionar</button></div>}
+          <StructuredRows rows={structuredData.laborEntries.map((entry) => ({ id: entry.id, main: entry.description, meta: `${entry.quantity} ${entry.unit}${entry.notes ? ` / ${entry.notes}` : ""}` }))} locked={locked} onRemove={(id) => onChange({ laborEntries: structuredData.laborEntries.filter((entry) => entry.id !== id) })} />
+        </StructuredPanel>
+      )}
+      {enabledItems.includes("equipment") && (
+        <StructuredPanel title="Equipamentos">
+          {!locked && <div className="structured-form-row"><select value={equipmentDraft.catalogItemId} onChange={(event) => setEquipmentDraft((current) => ({ ...current, catalogItemId: event.target.value }))}>{activeEquipment.map((item) => <option value={item.id} key={item.id}>{item.description}</option>)}</select><input placeholder="Ou novo equipamento" value={equipmentDraft.description} onChange={(event) => setEquipmentDraft((current) => ({ ...current, description: event.target.value }))} /><input type="number" min="0" value={equipmentDraft.quantity} onChange={(event) => setEquipmentDraft((current) => ({ ...current, quantity: Number(event.target.value) }))} /><input type="number" min="0" placeholder="Horas" value={equipmentDraft.hours} onChange={(event) => setEquipmentDraft((current) => ({ ...current, hours: Number(event.target.value) }))} /><button className="small-primary" type="button" onClick={addEquipment}><Plus size={15} />Adicionar</button></div>}
+          <StructuredRows rows={structuredData.equipmentEntries.map((entry) => ({ id: entry.id, main: entry.description, meta: `${entry.quantity} un. / ${entry.hours}h${entry.notes ? ` / ${entry.notes}` : ""}` }))} locked={locked} onRemove={(id) => onChange({ equipmentEntries: structuredData.equipmentEntries.filter((entry) => entry.id !== id) })} />
+        </StructuredPanel>
+      )}
+      {enabledItems.includes("occurrence") && (
+        <StructuredPanel title="Ocorrências">
+          {!locked && <div className="structured-form-row"><select value={occurrenceDraft.catalogItemId} onChange={(event) => setOccurrenceDraft((current) => ({ ...current, catalogItemId: event.target.value }))}>{activeOccurrences.map((item) => <option value={item.id} key={item.id}>{item.description}</option>)}</select><input placeholder="Ou nova ocorrência" value={occurrenceDraft.description} onChange={(event) => setOccurrenceDraft((current) => ({ ...current, description: event.target.value }))} /><select value={occurrenceDraft.severity} onChange={(event) => setOccurrenceDraft((current) => ({ ...current, severity: event.target.value as ReportOccurrenceEntry["severity"] }))}><option value="info">Informativa</option><option value="attention">Atenção</option><option value="critical">Crítica</option></select><button className="small-primary" type="button" onClick={addOccurrence}><Plus size={15} />Adicionar</button></div>}
+          <StructuredRows rows={structuredData.occurrenceEntries.map((entry) => ({ id: entry.id, main: entry.description, meta: `${occurrenceSeverityLabel(entry.severity)}${entry.notes ? ` / ${entry.notes}` : ""}` }))} locked={locked} onRemove={(id) => onChange({ occurrenceEntries: structuredData.occurrenceEntries.filter((entry) => entry.id !== id) })} />
+        </StructuredPanel>
+      )}
+      {enabledItems.includes("checklist") && (
+        <StructuredPanel title="Checklist">
+          <div className="checklist-response-grid">
+            {activeChecklists.flatMap((checklist) => checklist.items.map((item) => {
+              const existing = structuredData.checklistResponses.find((response) => response.checklistItemId === item.id);
+              return (
+                <label className="checklist-response" key={item.id}>
+                  <span>{item.question}</span>
+                  <select disabled={locked} value={existing?.answer ?? ""} onChange={(event) => upsertChecklistResponse({ id: existing?.id ?? makeLocalId("checklist-response"), reportId, checklistId: checklist.id, checklistItemId: item.id, itemLabel: item.itemLabel, question: item.question, answer: event.target.value, compliant: event.target.value.toLowerCase().includes("match") || event.target.value.toLowerCase().includes("atende"), notes: existing?.notes ?? "" })}>
+                    <option value="">Responder</option>
+                    {item.answers.map((answer) => <option value={answer} key={answer}>{answer}</option>)}
+                  </select>
+                </label>
+              );
+            }))}
+          </div>
+        </StructuredPanel>
+      )}
+      <StructuredPanel title="Lista de tarefas">
+        {!locked && <div className="structured-form-row"><input placeholder="Nova tarefa" value={taskDraft.description} onChange={(event) => setTaskDraft((current) => ({ ...current, description: event.target.value }))} /><select value={taskDraft.status} onChange={(event) => setTaskDraft((current) => ({ ...current, status: event.target.value as ReportTask["status"] }))}><option value="pending">Pendente</option><option value="in_progress">Em andamento</option><option value="completed">Concluída</option></select><input placeholder="Responsável" value={taskDraft.owner} onChange={(event) => setTaskDraft((current) => ({ ...current, owner: event.target.value }))} /><input type="date" value={taskDraft.dueDate} onChange={(event) => setTaskDraft((current) => ({ ...current, dueDate: event.target.value }))} /><button className="small-primary" type="button" onClick={addTask}><Plus size={15} />Adicionar</button></div>}
+        <StructuredRows rows={structuredData.tasks.map((task) => ({ id: task.id, main: task.description, meta: `${taskStatusLabel(task.status)}${task.owner ? ` / ${task.owner}` : ""}${task.dueDate ? ` / ${formatDate(task.dueDate)}` : ""}` }))} locked={locked} onRemove={(id) => onChange({ tasks: structuredData.tasks.filter((task) => task.id !== id) })} />
+      </StructuredPanel>
+    </div>
+  );
+}
+
+function StructuredPanel({ title, children }: { title: string; children: ReactNode }) {
+  return <section className="structured-panel"><h3>{title}</h3>{children}</section>;
+}
+
+function StructuredRows({ rows, locked, onRemove }: { rows: Array<{ id: string; main: string; meta: string }>; locked: boolean; onRemove: (id: string) => void }) {
+  if (rows.length === 0) return <span className="muted-text">Nenhum item estruturado informado.</span>;
+  return <div className="structured-row-list">{rows.map((row) => <div className="structured-row" key={row.id}><strong>{row.main}</strong><span>{row.meta}</span>{!locked && <button type="button" onClick={() => onRemove(row.id)}><X size={15} /></button>}</div>)}</div>;
+}
+
+function SettingsLayout({ activePage, onNavigate, users, templates, labor, equipment, occurrences, checklists, projects, onOpenModal, onToggleCatalog }: { activePage: Page; onNavigate: (page: Page) => void; users: AppUser[]; templates: ReportTemplate[]; labor: CatalogItem[]; equipment: CatalogItem[]; occurrences: CatalogItem[]; checklists: ChecklistTemplate[]; projects: Project[]; onOpenModal: (modal: ModalState) => void; onToggleCatalog: (kind: CatalogKind, item: CatalogItem, active: boolean) => Promise<void> }) {
   return (
     <div className="settings-layout">
       <aside className="settings-sidebar">
@@ -791,11 +972,11 @@ function SettingsLayout({ activePage, onNavigate, users, templates, labor, equip
         ) : activePage === "settings-templates" ? (
           <TemplatesSettings templates={templates} onOpenModal={onOpenModal} />
         ) : activePage === "settings-labor" ? (
-          <CatalogSettings title="Mão de obra" kind="labor" icon={HardHat} items={labor} onOpenModal={onOpenModal} />
+          <CatalogSettings title="Mão de obra" kind="labor" icon={HardHat} items={labor} onOpenModal={onOpenModal} onToggleCatalog={onToggleCatalog} />
         ) : activePage === "settings-equipment" ? (
-          <CatalogSettings title="Equipamentos" kind="equipment" icon={Wrench} items={equipment} onOpenModal={onOpenModal} />
+          <CatalogSettings title="Equipamentos" kind="equipment" icon={Wrench} items={equipment} onOpenModal={onOpenModal} onToggleCatalog={onToggleCatalog} />
         ) : activePage === "settings-occurrences" ? (
-          <CatalogSettings title="Tipos de ocorrência" kind="occurrences" icon={ShieldCheck} items={occurrences} onOpenModal={onOpenModal} />
+          <CatalogSettings title="Tipos de ocorrência" kind="occurrences" icon={ShieldCheck} items={occurrences} onOpenModal={onOpenModal} onToggleCatalog={onToggleCatalog} />
         ) : activePage === "settings-checklist" ? (
           <ChecklistSettings checklists={checklists} onOpenModal={onOpenModal} />
         ) : activePage === "settings-project-groups" ? (
@@ -1142,7 +1323,7 @@ function TemplatesSettings({ templates, onOpenModal }: { templates: ReportTempla
   );
 }
 
-function CatalogSettings({ title, kind, icon: Icon, items, onOpenModal }: { title: string; kind: CatalogKind; icon: LucideIcon; items: CatalogItem[]; onOpenModal: (modal: ModalState) => void }) {
+function CatalogSettings({ title, kind, icon: Icon, items, onOpenModal, onToggleCatalog }: { title: string; kind: CatalogKind; icon: LucideIcon; items: CatalogItem[]; onOpenModal: (modal: ModalState) => void; onToggleCatalog: (kind: CatalogKind, item: CatalogItem, active: boolean) => Promise<void> }) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const visibleItems = items.filter((item) => matchesQuery([item.description, item.group ?? ""], query) && (status === "all" || item.status === status));
@@ -1151,7 +1332,7 @@ function CatalogSettings({ title, kind, icon: Icon, items, onOpenModal }: { titl
       <div className="page-toolbar compact"><h1>{title} ({visibleItems.length})</h1><div className="filters"><IconInput icon={Search} placeholder="Buscar" value={query} onChange={setQuery} /><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">Todos os status</option><option value="active">Ativo</option><option value="inactive">Inativo</option></select><button className="primary-action" onClick={() => onOpenModal({ type: "catalog", kind })}><Plus size={18} />Adicionar</button></div></div>
       <section className="panel catalog-panel">
         <div className="table-list">
-          {visibleItems.map((item) => <div className="table-row" key={item.id}><Icon size={16} /><span>{item.description}</span><span>{item.group ?? ""}</span><button onClick={() => onOpenModal({ type: "catalog", kind, item })}><Edit3 size={16} /></button></div>)}
+          {visibleItems.map((item) => <div className="table-row" key={item.id}><Icon size={16} /><label className="catalog-toggle"><input type="checkbox" checked={item.status === "active"} onChange={(event) => void onToggleCatalog(kind, item, event.target.checked)} /> {item.description}</label><span>{item.group ?? ""}</span><button onClick={() => onOpenModal({ type: "catalog", kind, item })}><Edit3 size={16} /></button></div>)}
         </div>
       </section>
     </section>
@@ -1192,8 +1373,53 @@ function ProjectPredefineSettings({ title, projects, items }: { title: string; p
   return <section className="page-inner"><section className="panel"><h2>{title}</h2><p className="muted-text">Selecione uma obra e use os cadastros ativos como lista padrão do relatório. A persistência por obra entra na próxima etapa de regras de obra.</p><select value={projectId} onChange={(event) => setProjectId(event.target.value)}>{projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select><div className="parameter-list">{items.slice(0, 12).map((item) => <label key={item.id}><input type="checkbox" checked={selectedIds.includes(item.id)} onChange={() => toggleItem(item.id)} /> {item.description}</label>)}</div><button className="save-button" onClick={() => setSavedAt(new Date().toLocaleTimeString("pt-BR"))}><Save size={17} />Salvar seleção</button>{savedAt && <span className="muted-text">Seleção aplicada localmente às {savedAt}.</span>}</section></section>;
 }
 
-function AnalysisPage({ reports }: { reports: Report[] }) {
-  return <section className="page wide"><h1>Análise de dados</h1><div className="dashboard-grid"><Metric title="Relatórios aprovados" value={String(reports.filter((report) => report.status === "approved").length)} /><Metric title="Aguardando aprovação" value={String(reports.filter((report) => report.status === "pending_review").length)} /><Metric title="Ocorrências abertas" value={String(reports.filter((report) => report.sections.occurrences.trim()).length)} /><Metric title="Fotos anexadas" value="0" /></div><section className="panel"><h2>Insights da obra</h2><p>A base já separa rascunhos, revisão e aprovados. Os próximos indicadores entram quando produção, fotos e ocorrências forem estruturados por seção.</p></section></section>;
+function AnalysisPage({ view, reports, projects, onOpenReport }: { view: Page; reports: Report[]; projects: Project[]; onOpenReport: (reportId: string) => void }) {
+  const taskRows = reports.flatMap((report) => report.structuredData.tasks.map((task) => ({ report, task })));
+  const insertedRows = reports.flatMap((report) => [
+    ...report.structuredData.laborEntries.map((entry) => ({ report, type: "Mão de obra", description: entry.description, value: `${entry.quantity} ${entry.unit}` })),
+    ...report.structuredData.equipmentEntries.map((entry) => ({ report, type: "Equipamento", description: entry.description, value: `${entry.quantity} un. / ${entry.hours}h` })),
+    ...report.structuredData.occurrenceEntries.map((entry) => ({ report, type: "Ocorrência", description: entry.description, value: occurrenceSeverityLabel(entry.severity) })),
+    ...report.structuredData.checklistResponses.map((entry) => ({ report, type: "Checklist", description: entry.question, value: entry.answer }))
+  ]);
+  const pendingReports = reports.filter((report) => report.status === "draft" || report.status === "revised" || hasMissingStructuredData(report));
+
+  if (view === "analysis-created") {
+    return <AnalysisShell title="Relatórios criados"><ReportList reports={reports} onOpenReport={onOpenReport} /></AnalysisShell>;
+  }
+
+  if (view === "analysis-pending") {
+    return <AnalysisShell title="Aguardando informações">{pendingReports.length > 0 ? <ReportList reports={pendingReports} onOpenReport={onOpenReport} /> : <EmptyState icon={ClipboardList} title="Nada pendente" text="Todos os RDOs possuem dados mínimos ou já seguiram para revisão." />}</AnalysisShell>;
+  }
+
+  if (view === "analysis-tasks") {
+    return <AnalysisShell title="Lista de tarefas"><div className="analysis-table">{taskRows.map(({ report, task }) => <div className="analysis-row" key={task.id}><span>RDO #{report.number}</span><strong>{task.description}</strong><span>{taskStatusLabel(task.status)}</span><span>{task.owner || "-"}</span><span>{task.dueDate ? formatDate(task.dueDate) : "-"}</span></div>)}</div>{taskRows.length === 0 && <EmptyState icon={ListChecks} title="Nenhuma tarefa" text="As tarefas adicionadas nos RDOs aparecerão aqui." />}</AnalysisShell>;
+  }
+
+  if (view === "analysis-inserted") {
+    return <AnalysisShell title="Dados inseridos nos relatórios"><div className="analysis-table">{insertedRows.map((row, index) => <div className="analysis-row" key={`${row.report.id}-${row.type}-${index}`}><span>RDO #{row.report.number}</span><strong>{row.type}</strong><span>{row.description}</span><span>{row.value}</span><span>{projectName(projects, row.report.projectId)}</span></div>)}</div>{insertedRows.length === 0 && <EmptyState icon={BarChart3} title="Sem dados estruturados" text="Adicione mão de obra, equipamentos, ocorrências ou checklist em um RDO." />}</AnalysisShell>;
+  }
+
+  return (
+    <section className="page wide">
+      <h1>Análise de dados</h1>
+      <div className="dashboard-grid">
+        <Metric title="Visão geral" value={String(projects.length)} />
+        <Metric title="Relatórios criados" value={String(reports.length)} />
+        <Metric title="Aguardando informações" value={String(pendingReports.length)} />
+        <Metric title="Lista de tarefas" value={String(taskRows.filter(({ task }) => task.status !== "completed").length)} />
+        <Metric title="Mão de obra lançada" value={String(reports.reduce((total, report) => total + report.structuredData.laborEntries.length, 0))} />
+        <Metric title="Ocorrências" value={String(reports.reduce((total, report) => total + report.structuredData.occurrenceEntries.length, 0))} />
+      </div>
+      <section className="panel">
+        <div className="panel-header"><h2>Dados inseridos nos relatórios</h2><span className="badge gray">{insertedRows.length} registros</span></div>
+        <div className="analysis-table">{insertedRows.slice(0, 8).map((row, index) => <div className="analysis-row" key={`${row.report.id}-${row.type}-${index}`}><span>RDO #{row.report.number}</span><strong>{row.type}</strong><span>{row.description}</span><span>{row.value}</span><span>{projectName(projects, row.report.projectId)}</span></div>)}</div>
+      </section>
+    </section>
+  );
+}
+
+function AnalysisShell({ title, children }: { title: string; children: ReactNode }) {
+  return <section className="page wide"><h1>{title}</h1><section className="panel analysis-panel">{children}</section></section>;
 }
 
 function ChatHubPage({ selectedProject }: { selectedProject?: Project }) {
@@ -1321,6 +1547,29 @@ function accessProfileLabel(profile: AccessProfile) {
 
 function catalogKindLabel(kind: CatalogKind) {
   return kind === "labor" ? "Mão de obra" : kind === "equipment" ? "Equipamento" : "Tipo de ocorrência";
+}
+
+function occurrenceSeverityLabel(severity: ReportOccurrenceEntry["severity"]) {
+  const labels: Record<ReportOccurrenceEntry["severity"], string> = { info: "Informativa", attention: "Atenção", critical: "Crítica" };
+  return labels[severity];
+}
+
+function taskStatusLabel(status: ReportTask["status"]) {
+  const labels: Record<ReportTask["status"], string> = { pending: "Pendente", in_progress: "Em andamento", completed: "Concluída" };
+  return labels[status];
+}
+
+function makeLocalId(prefix: string) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function hasMissingStructuredData(report: Report) {
+  const data = report.structuredData;
+  return data.laborEntries.length === 0 || data.equipmentEntries.length === 0 || data.tasks.some((task) => task.status !== "completed");
+}
+
+function projectName(projects: Project[], projectId: string) {
+  return projects.find((project) => project.id === projectId)?.name ?? "Obra";
 }
 
 function initials(name: string) {

@@ -29,8 +29,8 @@ Top navigation:
 - Company name.
 - Projects.
 - Reports.
-- Data Analysis.
-- Settings.
+- Data Analysis as a dropdown with overview, created reports, pending information, task list, and inserted report data.
+- Settings / Cadastros as a dropdown with profile, company, users, project groups, report templates, labor, equipment, occurrence types, checklist, predefined labor, and predefined equipment.
 - Language selector.
 - Create button.
 - User menu with avatar, name, email, and notifications.
@@ -164,6 +164,12 @@ Report editor sections:
 - Video.
 - Attachment.
 - Signature.
+
+Structured RDO inputs:
+
+- Labor, equipment, occurrences, checklist answers, and task list should be entered as structured rows linked to report data.
+- Text areas remain for weather, activities, and commentary.
+- Labor and equipment catalog checkboxes in Cadastros activate or deactivate suggestions; they are not the final report entries.
 
 ### Report Chat Hub
 

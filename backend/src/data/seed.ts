@@ -170,6 +170,27 @@ export const reports: Report[] = [
       occurrences: "Sem ocorrencias criticas registradas.",
       comments: "Frente liberada para continuidade no proximo dia util.",
       checklistNotes: "Conferencia visual realizada pelo responsavel da obra."
+    },
+    structuredData: {
+      laborEntries: [
+        { id: "report-draft-1-labor-1", reportId: "report-draft-1", catalogItemId: "labor-3", description: "Engenheiro", quantity: 1, unit: "profissional", notes: "" },
+        { id: "report-draft-1-labor-2", reportId: "report-draft-1", catalogItemId: "labor-6", description: "Mestre de Obra", quantity: 1, unit: "profissional", notes: "" },
+        { id: "report-draft-1-labor-3", reportId: "report-draft-1", catalogItemId: "labor-7", description: "Pedreiro", quantity: 2, unit: "profissionais", notes: "" },
+        { id: "report-draft-1-labor-4", reportId: "report-draft-1", catalogItemId: "labor-8", description: "Servente", quantity: 3, unit: "profissionais", notes: "" }
+      ],
+      equipmentEntries: [
+        { id: "report-draft-1-equipment-1", reportId: "report-draft-1", catalogItemId: "equipment-1", description: "Betoneira", quantity: 1, hours: 6, notes: "" },
+        { id: "report-draft-1-equipment-2", reportId: "report-draft-1", catalogItemId: "equipment-7", description: "Pá Carregadeira", quantity: 1, hours: 2, notes: "" }
+      ],
+      occurrenceEntries: [
+        { id: "report-draft-1-occurrence-1", reportId: "report-draft-1", description: "Sem ocorrências críticas registradas", severity: "info", notes: "" }
+      ],
+      checklistResponses: [
+        { id: "report-draft-1-checklist-1", reportId: "report-draft-1", checklistId: "checklist-quality", checklistItemId: "checklist-quality-1", itemLabel: "1 Item", question: "O servico executado esta conforme?", answer: "Matches", compliant: true, notes: "Conferência visual realizada." }
+      ],
+      tasks: [
+        { id: "report-draft-1-task-1", reportId: "report-draft-1", description: "Continuar alvenaria do pavimento 2", status: "pending", owner: "Mestre de Obra", dueDate: "2026-05-13" }
+      ]
     }
   }
 ];

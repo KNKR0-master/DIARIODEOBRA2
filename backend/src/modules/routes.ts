@@ -2,11 +2,19 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import { database } from "../data/database.js";
-import type { AuditLog, CatalogItem, ChecklistTemplate, ContractType, PdfVersion, Project, ProjectStatus, Report, ReportSections, ReportTemplate, User } from "../types.js";
+import type { AuditLog, CatalogItem, ChecklistTemplate, ContractType, PdfVersion, Project, ProjectStatus, Report, ReportChecklistResponse, ReportEquipmentEntry, ReportLaborEntry, ReportOccurrenceEntry, ReportSections, ReportStructuredData, ReportTask, ReportTemplate, User } from "../types.js";
 
 const defaultActor = {
   actorUserId: "user-joao",
   actorName: "JOAO VICTOR"
+};
+
+type StructuredDataInput = {
+  laborEntries?: Array<Omit<ReportLaborEntry, "id" | "reportId"> & { id?: string }>;
+  equipmentEntries?: Array<Omit<ReportEquipmentEntry, "id" | "reportId"> & { id?: string }>;
+  occurrenceEntries?: Array<Omit<ReportOccurrenceEntry, "id" | "reportId"> & { id?: string }>;
+  checklistResponses?: Array<Omit<ReportChecklistResponse, "id" | "reportId"> & { id?: string }>;
+  tasks?: Array<Omit<ReportTask, "id" | "reportId"> & { id?: string }>;
 };
 
 const createProjectSchema = z.object({
@@ -84,7 +92,61 @@ const createReportSchema = z.object({
 });
 
 const updateReportSchema = z.object({
-  sections: reportSectionsSchema.partial()
+  sections: reportSectionsSchema.partial(),
+  structuredData: z
+    .object({
+      laborEntries: z.array(
+        z.object({
+          id: z.string().optional(),
+          catalogItemId: z.string().optional(),
+          description: z.string().min(1),
+          quantity: z.number().nonnegative(),
+          unit: z.string().min(1).default("profissionais"),
+          notes: z.string().optional().default("")
+        })
+      ),
+      equipmentEntries: z.array(
+        z.object({
+          id: z.string().optional(),
+          catalogItemId: z.string().optional(),
+          description: z.string().min(1),
+          quantity: z.number().nonnegative(),
+          hours: z.number().nonnegative().default(0),
+          notes: z.string().optional().default("")
+        })
+      ),
+      occurrenceEntries: z.array(
+        z.object({
+          id: z.string().optional(),
+          catalogItemId: z.string().optional(),
+          description: z.string().min(1),
+          severity: z.enum(["info", "attention", "critical"]).default("info"),
+          notes: z.string().optional().default("")
+        })
+      ),
+      checklistResponses: z.array(
+        z.object({
+          id: z.string().optional(),
+          checklistId: z.string().optional(),
+          checklistItemId: z.string().optional(),
+          itemLabel: z.string().min(1),
+          question: z.string().min(1),
+          answer: z.string().min(1),
+          compliant: z.boolean().optional(),
+          notes: z.string().optional().default("")
+        })
+      ),
+      tasks: z.array(
+        z.object({
+          id: z.string().optional(),
+          description: z.string().min(1),
+          status: z.enum(["pending", "in_progress", "completed"]).default("pending"),
+          owner: z.string().optional().default(""),
+          dueDate: z.string().optional().default("")
+        })
+      )
+    })
+    .optional()
 });
 
 const approvalSchema = z.object({
@@ -108,6 +170,14 @@ const emptySections = (): ReportSections => ({
 
 const nowIso = () => new Date().toISOString();
 
+const emptyStructuredData = (): ReportStructuredData => ({
+  laborEntries: [],
+  equipmentEntries: [],
+  occurrenceEntries: [],
+  checklistResponses: [],
+  tasks: []
+});
+
 const catalogKinds = {
   labor: "labor",
   equipment: "equipment",
@@ -127,6 +197,7 @@ const buildReportHash = (report: Report) =>
         reportDate: report.reportDate,
         status: "approved",
         sections: report.sections,
+        structuredData: report.structuredData,
         creatorUserId: report.creatorUserId,
         submittedAt: report.submittedAt,
         approverUserId: report.approverUserId,
@@ -136,6 +207,54 @@ const buildReportHash = (report: Report) =>
       })
     )
     .digest("hex");
+
+const normalizeStructuredData = (reportId: string, structuredData?: StructuredDataInput): ReportStructuredData => ({
+  laborEntries: (structuredData?.laborEntries ?? []).map((entry): ReportLaborEntry => ({
+    id: entry.id || `report-labor-${randomUUID()}`,
+    reportId,
+    catalogItemId: entry.catalogItemId,
+    description: entry.description,
+    quantity: Number(entry.quantity) || 0,
+    unit: entry.unit || "profissionais",
+    notes: entry.notes ?? ""
+  })),
+  equipmentEntries: (structuredData?.equipmentEntries ?? []).map((entry): ReportEquipmentEntry => ({
+    id: entry.id || `report-equipment-${randomUUID()}`,
+    reportId,
+    catalogItemId: entry.catalogItemId,
+    description: entry.description,
+    quantity: Number(entry.quantity) || 0,
+    hours: Number(entry.hours) || 0,
+    notes: entry.notes ?? ""
+  })),
+  occurrenceEntries: (structuredData?.occurrenceEntries ?? []).map((entry): ReportOccurrenceEntry => ({
+    id: entry.id || `report-occurrence-${randomUUID()}`,
+    reportId,
+    catalogItemId: entry.catalogItemId,
+    description: entry.description,
+    severity: entry.severity ?? "info",
+    notes: entry.notes ?? ""
+  })),
+  checklistResponses: (structuredData?.checklistResponses ?? []).map((entry): ReportChecklistResponse => ({
+    id: entry.id || `report-checklist-${randomUUID()}`,
+    reportId,
+    checklistId: entry.checklistId,
+    checklistItemId: entry.checklistItemId,
+    itemLabel: entry.itemLabel,
+    question: entry.question,
+    answer: entry.answer,
+    compliant: entry.compliant,
+    notes: entry.notes ?? ""
+  })),
+  tasks: (structuredData?.tasks ?? []).map((task): ReportTask => ({
+    id: task.id || `report-task-${randomUUID()}`,
+    reportId,
+    description: task.description,
+    status: task.status ?? "pending",
+    owner: task.owner ?? "",
+    dueDate: task.dueDate ?? ""
+  }))
+});
 
 export async function registerRoutes(app: FastifyInstance) {
   app.get("/health", async () => {
@@ -295,7 +414,7 @@ export async function registerRoutes(app: FastifyInstance) {
       counters: {
         reports: projectReports.length,
         activities: projectReports.filter((report) => report.sections.activities.trim()).length,
-        occurrences: projectReports.filter((report) => report.sections.occurrences.trim()).length,
+        occurrences: projectReports.reduce((total, report) => total + report.structuredData.occurrenceEntries.length, 0),
         comments: projectReports.filter((report) => report.sections.comments.trim()).length,
         photos: 0,
         videos: 0
@@ -332,8 +451,9 @@ export async function registerRoutes(app: FastifyInstance) {
     const currentUser = database.getUser(defaultActor.actorUserId);
     const lastReport = database.getLastReport(payload.projectId);
     const number = database.nextReportNumber();
+    const reportId = `report-${number}-${randomUUID()}`;
     const report: Report = {
-      id: `report-${number}-${randomUUID()}`,
+      id: reportId,
       number,
       projectId: payload.projectId,
       templateId: payload.templateId,
@@ -342,7 +462,8 @@ export async function registerRoutes(app: FastifyInstance) {
       creatorUserId: currentUser?.id ?? defaultActor.actorUserId,
       creatorName: currentUser?.name ?? defaultActor.actorName,
       createdAt: nowIso(),
-      sections: payload.copyFromLast && lastReport ? { ...lastReport.sections } : emptySections()
+      sections: payload.copyFromLast && lastReport ? { ...lastReport.sections } : emptySections(),
+      structuredData: payload.copyFromLast && lastReport ? normalizeStructuredData(reportId, lastReport.structuredData) : emptyStructuredData()
     };
 
     return reply.code(201).send({ report: database.createReport(report, defaultActor) });
@@ -377,14 +498,18 @@ export async function registerRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "Invalid report update payload", details: parsedBody.error.flatten() });
     }
 
-    const changedFields = Object.keys(parsedBody.data.sections);
+    const changedFields = [
+      ...Object.keys(parsedBody.data.sections),
+      ...(parsedBody.data.structuredData ? ["structuredData"] : [])
+    ];
     const updatedReport: Report = {
       ...report,
       status: report.status === "pending_review" ? "revised" : report.status,
       sections: {
         ...report.sections,
         ...parsedBody.data.sections
-      }
+      },
+      structuredData: parsedBody.data.structuredData ? normalizeStructuredData(report.id, parsedBody.data.structuredData) : report.structuredData
     };
 
     return { report: database.updateReportSections(updatedReport, defaultActor, changedFields) };

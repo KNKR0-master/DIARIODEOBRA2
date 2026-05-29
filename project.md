@@ -168,6 +168,12 @@ Example fields:
 - Photos, audio, documents, and references.
 - Pending actions and responsible people.
 
+Stage 3 implementation note:
+
+- RDO labor, equipment, occurrences, checklist responses, and tasks are now treated as real structured report items.
+- Pre-registration catalogs are suggestions that can be activated/deactivated and used to fill report rows.
+- Analysis views should read from these structured rows for created reports, pending information, task lists, and inserted report data.
+
 ### 5. Web Module
 
 The web module should provide an operational workspace for creating, reviewing, correcting, and analyzing reports.

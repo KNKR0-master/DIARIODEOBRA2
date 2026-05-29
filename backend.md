@@ -97,6 +97,20 @@ Report statuses:
 - Revised.
 - Amended.
 
+### Structured Report Items
+
+The RDO stores operational fields in normalized tables instead of only text blocks.
+
+Structured tables:
+
+- Report labor entries: catalog suggestion, description, quantity, unit, notes.
+- Report equipment entries: catalog suggestion, description, quantity, hours, notes.
+- Report occurrence entries: occurrence type suggestion, severity, notes.
+- Report checklist responses: checklist item, answer, compliance flag, notes.
+- Report tasks: action description, status, owner, due date.
+
+Catalog items remain reusable suggestions. Labor and equipment suggestions can be active or inactive so each company can keep only the options it uses while still adding custom functions, equipment, and categories.
+
 ### Inbound Message
 
 Stores WhatsApp and web chat messages.

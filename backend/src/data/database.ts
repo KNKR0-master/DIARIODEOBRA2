@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { checklists, company, equipment, labor, occurrenceTypes, projects, reports, reportTemplates, signatures, users } from "./seed.js";
-import type { AuditLog, CatalogItem, ChecklistItem, ChecklistTemplate, Company, PdfVersion, Project, Report, ReportSections, ReportTemplate, Signature, User } from "../types.js";
+import type { AuditLog, CatalogItem, ChecklistItem, ChecklistTemplate, Company, PdfVersion, Project, Report, ReportChecklistResponse, ReportEquipmentEntry, ReportLaborEntry, ReportOccurrenceEntry, ReportSections, ReportStructuredData, ReportTask, ReportTemplate, Signature, User } from "../types.js";
 
 type CountRow = { count: number };
 
@@ -120,6 +120,56 @@ type ReportSectionRow = {
   checklist_notes: string;
 };
 
+type ReportLaborEntryRow = {
+  id: string;
+  report_id: string;
+  catalog_item_id: string | null;
+  description: string;
+  quantity: number;
+  unit: string;
+  notes: string;
+};
+
+type ReportEquipmentEntryRow = {
+  id: string;
+  report_id: string;
+  catalog_item_id: string | null;
+  description: string;
+  quantity: number;
+  hours: number;
+  notes: string;
+};
+
+type ReportOccurrenceEntryRow = {
+  id: string;
+  report_id: string;
+  catalog_item_id: string | null;
+  description: string;
+  severity: ReportOccurrenceEntry["severity"];
+  notes: string;
+};
+
+type ReportChecklistResponseRow = {
+  id: string;
+  report_id: string;
+  checklist_id: string | null;
+  checklist_item_id: string | null;
+  item_label: string;
+  question: string;
+  answer: string;
+  compliant: number | null;
+  notes: string;
+};
+
+type ReportTaskRow = {
+  id: string;
+  report_id: string;
+  description: string;
+  status: ReportTask["status"];
+  owner: string;
+  due_date: string;
+};
+
 type AuditLogRow = {
   id: string;
   entity_type: AuditLog["entityType"];
@@ -166,6 +216,14 @@ const emptySections = (): ReportSections => ({
   occurrences: "",
   comments: "",
   checklistNotes: ""
+});
+
+const emptyStructuredData = (): ReportStructuredData => ({
+  laborEntries: [],
+  equipmentEntries: [],
+  occurrenceEntries: [],
+  checklistResponses: [],
+  tasks: []
 });
 
 function toCompany(row: CompanyRow): Company {
@@ -265,7 +323,7 @@ function toChecklistItem(row: ChecklistItemRow): ChecklistItem {
   };
 }
 
-function toReport(row: ReportRow, sectionRow?: ReportSectionRow): Report {
+function toReport(row: ReportRow, sectionRow?: ReportSectionRow, structuredData: ReportStructuredData = emptyStructuredData()): Report {
   const sections = sectionRow
     ? {
         weather: sectionRow.weather,
@@ -290,6 +348,7 @@ function toReport(row: ReportRow, sectionRow?: ReportSectionRow): Report {
     createdAt: row.created_at,
     submittedAt: row.submitted_at ?? undefined,
     sections,
+    structuredData,
     approvedAt: row.approved_at ?? undefined,
     approverUserId: row.approver_user_id ?? undefined,
     approverName: row.approver_name ?? undefined,
@@ -321,6 +380,66 @@ function toPdfVersion(row: PdfVersionRow): PdfVersion {
     filePath: row.file_path ?? undefined,
     createdAt: row.created_at,
     metadata: parseJson<Record<string, unknown>>(row.metadata_json, {})
+  };
+}
+
+function toReportLaborEntry(row: ReportLaborEntryRow): ReportLaborEntry {
+  return {
+    id: row.id,
+    reportId: row.report_id,
+    catalogItemId: row.catalog_item_id ?? undefined,
+    description: row.description,
+    quantity: row.quantity,
+    unit: row.unit,
+    notes: row.notes
+  };
+}
+
+function toReportEquipmentEntry(row: ReportEquipmentEntryRow): ReportEquipmentEntry {
+  return {
+    id: row.id,
+    reportId: row.report_id,
+    catalogItemId: row.catalog_item_id ?? undefined,
+    description: row.description,
+    quantity: row.quantity,
+    hours: row.hours,
+    notes: row.notes
+  };
+}
+
+function toReportOccurrenceEntry(row: ReportOccurrenceEntryRow): ReportOccurrenceEntry {
+  return {
+    id: row.id,
+    reportId: row.report_id,
+    catalogItemId: row.catalog_item_id ?? undefined,
+    description: row.description,
+    severity: row.severity,
+    notes: row.notes
+  };
+}
+
+function toReportChecklistResponse(row: ReportChecklistResponseRow): ReportChecklistResponse {
+  return {
+    id: row.id,
+    reportId: row.report_id,
+    checklistId: row.checklist_id ?? undefined,
+    checklistItemId: row.checklist_item_id ?? undefined,
+    itemLabel: row.item_label,
+    question: row.question,
+    answer: row.answer,
+    compliant: row.compliant === null ? undefined : fromBool(row.compliant),
+    notes: row.notes
+  };
+}
+
+function toReportTask(row: ReportTaskRow): ReportTask {
+  return {
+    id: row.id,
+    reportId: row.report_id,
+    description: row.description,
+    status: row.status,
+    owner: row.owner,
+    dueDate: row.due_date
   };
 }
 
@@ -668,6 +787,7 @@ class AppDatabase {
     this.withTransaction(() => {
       this.insertReport(report);
       this.upsertReportSections(report.id, report.sections);
+      this.replaceReportStructuredData(report.id, report.structuredData);
       this.writeAudit({
         entityType: "report",
         entityId: report.id,
@@ -689,6 +809,7 @@ class AppDatabase {
     this.withTransaction(() => {
       this.db.prepare("UPDATE reports SET status = ? WHERE id = ?").run(report.status, report.id);
       this.upsertReportSections(report.id, report.sections);
+      this.replaceReportStructuredData(report.id, report.structuredData);
       this.writeAudit({
         entityType: "report",
         entityId: report.id,
@@ -758,6 +879,7 @@ class AppDatabase {
     this.withTransaction(() => {
       this.updateReportMetadata(report);
       this.upsertReportSections(report.id, report.sections);
+      this.replaceReportStructuredData(report.id, report.structuredData);
       this.writeAudit({
         entityType: "report",
         entityId: report.id,
@@ -795,7 +917,17 @@ class AppDatabase {
 
   private hydrateReport(row: ReportRow) {
     const sectionRow = this.db.prepare("SELECT * FROM report_sections WHERE report_id = ?").get(row.id) as ReportSectionRow | undefined;
-    return toReport(row, sectionRow);
+    return toReport(row, sectionRow, this.getReportStructuredData(row.id));
+  }
+
+  private getReportStructuredData(reportId: string): ReportStructuredData {
+    return {
+      laborEntries: (this.db.prepare("SELECT * FROM report_labor_entries WHERE report_id = ? ORDER BY description").all(reportId) as ReportLaborEntryRow[]).map(toReportLaborEntry),
+      equipmentEntries: (this.db.prepare("SELECT * FROM report_equipment_entries WHERE report_id = ? ORDER BY description").all(reportId) as ReportEquipmentEntryRow[]).map(toReportEquipmentEntry),
+      occurrenceEntries: (this.db.prepare("SELECT * FROM report_occurrence_entries WHERE report_id = ? ORDER BY description").all(reportId) as ReportOccurrenceEntryRow[]).map(toReportOccurrenceEntry),
+      checklistResponses: (this.db.prepare("SELECT * FROM report_checklist_responses WHERE report_id = ? ORDER BY item_label").all(reportId) as ReportChecklistResponseRow[]).map(toReportChecklistResponse),
+      tasks: (this.db.prepare("SELECT * FROM report_tasks WHERE report_id = ? ORDER BY status, due_date, description").all(reportId) as ReportTaskRow[]).map(toReportTask)
+    };
   }
 
   private insertReport(report: Report) {
@@ -836,6 +968,64 @@ class AppDatabase {
           checklist_notes = excluded.checklist_notes`
       )
       .run(reportId, sections.weather, sections.labor, sections.equipment, sections.activities, sections.occurrences, sections.comments, sections.checklistNotes);
+  }
+
+  private replaceReportStructuredData(reportId: string, structuredData: ReportStructuredData) {
+    this.db.prepare("DELETE FROM report_labor_entries WHERE report_id = ?").run(reportId);
+    this.db.prepare("DELETE FROM report_equipment_entries WHERE report_id = ?").run(reportId);
+    this.db.prepare("DELETE FROM report_occurrence_entries WHERE report_id = ?").run(reportId);
+    this.db.prepare("DELETE FROM report_checklist_responses WHERE report_id = ?").run(reportId);
+    this.db.prepare("DELETE FROM report_tasks WHERE report_id = ?").run(reportId);
+
+    for (const entry of structuredData.laborEntries) {
+      this.db
+        .prepare(
+          `INSERT INTO report_labor_entries (
+            id, report_id, catalog_item_id, description, quantity, unit, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(entry.id, reportId, entry.catalogItemId ?? null, entry.description, entry.quantity, entry.unit, entry.notes);
+    }
+
+    for (const entry of structuredData.equipmentEntries) {
+      this.db
+        .prepare(
+          `INSERT INTO report_equipment_entries (
+            id, report_id, catalog_item_id, description, quantity, hours, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(entry.id, reportId, entry.catalogItemId ?? null, entry.description, entry.quantity, entry.hours, entry.notes);
+    }
+
+    for (const entry of structuredData.occurrenceEntries) {
+      this.db
+        .prepare(
+          `INSERT INTO report_occurrence_entries (
+            id, report_id, catalog_item_id, description, severity, notes
+          ) VALUES (?, ?, ?, ?, ?, ?)`
+        )
+        .run(entry.id, reportId, entry.catalogItemId ?? null, entry.description, entry.severity, entry.notes);
+    }
+
+    for (const entry of structuredData.checklistResponses) {
+      this.db
+        .prepare(
+          `INSERT INTO report_checklist_responses (
+            id, report_id, checklist_id, checklist_item_id, item_label, question, answer, compliant, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(entry.id, reportId, entry.checklistId ?? null, entry.checklistItemId ?? null, entry.itemLabel, entry.question, entry.answer, typeof entry.compliant === "boolean" ? toBool(entry.compliant) : null, entry.notes);
+    }
+
+    for (const task of structuredData.tasks) {
+      this.db
+        .prepare(
+          `INSERT INTO report_tasks (
+            id, report_id, description, status, owner, due_date
+          ) VALUES (?, ?, ?, ?, ?, ?)`
+        )
+        .run(task.id, reportId, task.description, task.status, task.owner, task.dueDate);
+    }
   }
 
   private insertPdfVersion(pdfVersion: PdfVersion) {
@@ -1003,6 +1193,66 @@ class AppDatabase {
         checklist_notes TEXT NOT NULL DEFAULT ''
       );
 
+      CREATE TABLE IF NOT EXISTS report_labor_entries (
+        id TEXT PRIMARY KEY,
+        report_id TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+        catalog_item_id TEXT REFERENCES catalog_items(id),
+        description TEXT NOT NULL,
+        quantity REAL NOT NULL DEFAULT 0,
+        unit TEXT NOT NULL DEFAULT 'profissionais',
+        notes TEXT NOT NULL DEFAULT ''
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_report_labor_entries_report ON report_labor_entries(report_id);
+
+      CREATE TABLE IF NOT EXISTS report_equipment_entries (
+        id TEXT PRIMARY KEY,
+        report_id TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+        catalog_item_id TEXT REFERENCES catalog_items(id),
+        description TEXT NOT NULL,
+        quantity REAL NOT NULL DEFAULT 0,
+        hours REAL NOT NULL DEFAULT 0,
+        notes TEXT NOT NULL DEFAULT ''
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_report_equipment_entries_report ON report_equipment_entries(report_id);
+
+      CREATE TABLE IF NOT EXISTS report_occurrence_entries (
+        id TEXT PRIMARY KEY,
+        report_id TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+        catalog_item_id TEXT REFERENCES catalog_items(id),
+        description TEXT NOT NULL,
+        severity TEXT NOT NULL DEFAULT 'info',
+        notes TEXT NOT NULL DEFAULT ''
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_report_occurrence_entries_report ON report_occurrence_entries(report_id);
+
+      CREATE TABLE IF NOT EXISTS report_checklist_responses (
+        id TEXT PRIMARY KEY,
+        report_id TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+        checklist_id TEXT REFERENCES checklist_templates(id),
+        checklist_item_id TEXT REFERENCES checklist_items(id),
+        item_label TEXT NOT NULL,
+        question TEXT NOT NULL,
+        answer TEXT NOT NULL,
+        compliant INTEGER,
+        notes TEXT NOT NULL DEFAULT ''
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_report_checklist_responses_report ON report_checklist_responses(report_id);
+
+      CREATE TABLE IF NOT EXISTS report_tasks (
+        id TEXT PRIMARY KEY,
+        report_id TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+        description TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        owner TEXT NOT NULL DEFAULT '',
+        due_date TEXT NOT NULL DEFAULT ''
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_report_tasks_report ON report_tasks(report_id);
+
       CREATE TABLE IF NOT EXISTS pdf_versions (
         id TEXT PRIMARY KEY,
         report_id TEXT NOT NULL REFERENCES reports(id),
@@ -1117,6 +1367,7 @@ class AppDatabase {
       .run(report.id, report.number, report.projectId, report.templateId, report.reportDate, report.status, report.creatorUserId, report.creatorName, report.createdAt, report.submittedAt ?? null, report.approvedAt ?? null, report.approverUserId ?? null, report.approverName ?? null, report.signatureId ?? null, report.pdfVersionId ?? null, report.hash ?? null);
 
     this.upsertReportSections(report.id, report.sections);
+    this.replaceReportStructuredData(report.id, report.structuredData);
 
     this.db
       .prepare(

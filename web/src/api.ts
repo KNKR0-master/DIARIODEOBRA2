@@ -54,6 +54,64 @@ export interface ReportSections {
   checklistNotes: string;
 }
 
+export interface ReportLaborEntry {
+  id: string;
+  reportId: string;
+  catalogItemId?: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  notes: string;
+}
+
+export interface ReportEquipmentEntry {
+  id: string;
+  reportId: string;
+  catalogItemId?: string;
+  description: string;
+  quantity: number;
+  hours: number;
+  notes: string;
+}
+
+export interface ReportOccurrenceEntry {
+  id: string;
+  reportId: string;
+  catalogItemId?: string;
+  description: string;
+  severity: "info" | "attention" | "critical";
+  notes: string;
+}
+
+export interface ReportChecklistResponse {
+  id: string;
+  reportId: string;
+  checklistId?: string;
+  checklistItemId?: string;
+  itemLabel: string;
+  question: string;
+  answer: string;
+  compliant?: boolean;
+  notes: string;
+}
+
+export interface ReportTask {
+  id: string;
+  reportId: string;
+  description: string;
+  status: "pending" | "in_progress" | "completed";
+  owner: string;
+  dueDate: string;
+}
+
+export interface ReportStructuredData {
+  laborEntries: ReportLaborEntry[];
+  equipmentEntries: ReportEquipmentEntry[];
+  occurrenceEntries: ReportOccurrenceEntry[];
+  checklistResponses: ReportChecklistResponse[];
+  tasks: ReportTask[];
+}
+
 export interface Report {
   id: string;
   number: number;
@@ -66,6 +124,7 @@ export interface Report {
   createdAt: string;
   submittedAt?: string;
   sections: ReportSections;
+  structuredData: ReportStructuredData;
   approvedAt?: string;
   approverUserId?: string;
   approverName?: string;
@@ -170,6 +229,11 @@ export interface CreateReportPayload {
   copyFromLast: boolean;
 }
 
+export interface UpdateReportPayload {
+  sections?: Partial<ReportSections>;
+  structuredData?: ReportStructuredData;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     headers: {
@@ -216,10 +280,10 @@ export const api = {
     });
   },
 
-  async updateReport(id: string, sections: Partial<ReportSections>) {
+  async updateReport(id: string, payload: UpdateReportPayload) {
     return request<{ report: Report }>(`/api/reports/${id}`, {
       method: "PATCH",
-      body: JSON.stringify({ sections })
+      body: JSON.stringify(payload)
     });
   },
 
