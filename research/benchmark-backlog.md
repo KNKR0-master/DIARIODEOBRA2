@@ -26,6 +26,10 @@
 
 ## Frontend Backlog From Current Review
 
+- Rename top-level product language to `Obras`, `Relatórios`, `Análise de dados`, and `Cadastros`.
+- Keep `Chat RDO` as our differentiating workflow.
+- Match reports status pipeline: `Preenchendo`, `Revisar`, `Aprovado`.
+- Add analysis subviews for overview, reports created, pending approval, tasks, photos, videos, attachments, labor, and equipment.
 - Replace static data with API calls.
 - Add route-based navigation.
 - Add project create/edit persistence.
@@ -43,4 +47,3 @@
 - Add JSON schema validation for extraction outputs.
 - Add source-reference requirement to every benchmark finding.
 - Add recurring Apify/Crawlee plan only after manual benchmarking is useful.
-

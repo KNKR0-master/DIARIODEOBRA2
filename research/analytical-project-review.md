@@ -1,6 +1,6 @@
 # Analytical Project Review
 
-Generated at: 2026-05-29T13:33:09.790Z
+Generated at: 2026-05-29T14:24:54.837Z
 
 ## Documentation Read
 
@@ -203,7 +203,7 @@ Headings found: 10
 
 ### BENCHMARKING.md
 
-Headings found: 10
+Headings found: 12
 
 - # Benchmarking Workflow
 - ## Purpose
@@ -211,6 +211,8 @@ Headings found: 10
 - ## Required Layers
 - ## Firecrawl Collection
 - ## Playwright Collection
+- ## Current App Visual Review
+- ## Authenticated Competitor Review
 - ## Apify/Crawlee Layer
 - ## Analyst Agent Output
 - ## Approval Gate

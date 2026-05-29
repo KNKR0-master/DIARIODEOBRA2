@@ -85,6 +85,44 @@ npm run research:playwright
 
 Without `BENCHMARK_TARGET_URL`, the command writes a diagnostic status file instead of failing.
 
+## Current App Visual Review
+
+Use this command to capture our own local prototype and create a review file before making visual changes:
+
+```powershell
+$env:APP_REVIEW_URL="http://127.0.0.1:5175"
+npm run research:review-current-app
+```
+
+Default URL:
+
+```text
+http://127.0.0.1:5175
+```
+
+Output:
+
+- Raw screenshots in `research/output/current-app/`.
+- Tracked review in `research/current-app-visual-review.md`.
+
+## Authenticated Competitor Review
+
+Use this command when the product owner provides a valid test login for a competitor or reference system:
+
+```powershell
+$env:COMPETITOR_URL="https://web.diariodeobra.app/"
+$env:COMPETITOR_EMAIL="user@example.com"
+$env:COMPETITOR_PASSWORD="secret"
+npm run research:competitor-auth
+```
+
+Rules:
+
+- Never commit credentials.
+- Raw screenshots stay in ignored `research/output/competitor-auth/`.
+- The tracked Markdown review must summarize UI/modules/flows without exposing passwords.
+- If screenshots contain private account data, do not move them out of `research/output/`.
+
 ## Apify/Crawlee Layer
 
 Do not add Crawlee to the local project until the recurring crawler is needed. The package currently adds a dependency chain with audit risk, so the first version keeps this as an operational option.
@@ -139,4 +177,3 @@ research/current-state-review.md
 research/feature-matrix.md
 research/benchmark-backlog.md
 ```
-

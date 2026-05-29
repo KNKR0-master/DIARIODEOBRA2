@@ -92,11 +92,10 @@ Before making it "look more alike" or implementing more frontend, we need:
 
 ## Immediate Cleanup
 
-Some Markdown files contain encoding artifacts in Portuguese text. Example: `RelatÃ³rio DiÃ¡rio`.
+The first review found Portuguese labels without accents and earlier encoding artifacts in some generated text.
 
-Recommendation:
+Status:
 
-- Normalize docs and UI labels to proper PT-BR before deeper implementation.
-- Keep source files encoded as UTF-8.
-- Use ASCII only for code identifiers.
-
+- UI seed labels and visible PT-BR labels were normalized after this review.
+- Source files should remain encoded as UTF-8.
+- Code identifiers should stay ASCII even when visible UI text uses PT-BR accents.

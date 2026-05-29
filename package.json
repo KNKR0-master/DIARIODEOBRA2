@@ -13,6 +13,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "research:firecrawl": "tsx scripts/research/firecrawl-map.ts",
     "research:playwright": "tsx scripts/research/playwright-capture.ts",
+    "research:review-current-app": "tsx scripts/research/playwright-review-current-app.ts",
+    "research:competitor-auth": "tsx scripts/research/playwright-competitor-auth-capture.ts",
     "research:analyze": "tsx scripts/research/analyze-current-project.ts",
     "research:all": "npm run research:firecrawl && npm run research:playwright && npm run research:analyze"
   },

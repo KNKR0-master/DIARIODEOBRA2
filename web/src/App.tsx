@@ -34,16 +34,16 @@ import { equipment, labor, occurrences, project } from "./data";
 type Page = "projects" | "overview" | "reports" | "analysis" | "chat" | "settings-profile" | "settings-users" | "settings-templates" | "settings-catalogs";
 
 const menuItems = [
-  { page: "projects" as Page, label: "Projetos", icon: Building2 },
-  { page: "reports" as Page, label: "Relatorios", icon: ClipboardList },
-  { page: "analysis" as Page, label: "Analise de dados", icon: BarChart3 },
-  { page: "settings-profile" as Page, label: "Configuracoes", icon: Settings }
+  { page: "projects" as Page, label: "Obras", icon: Building2 },
+  { page: "reports" as Page, label: "Relatórios", icon: ClipboardList },
+  { page: "analysis" as Page, label: "Análise de dados", icon: BarChart3 },
+  { page: "settings-profile" as Page, label: "Cadastros", icon: Settings }
 ];
 
 const settingsItems = [
   { page: "settings-profile" as Page, label: "Meu perfil", icon: User, count: null },
-  { page: "settings-users" as Page, label: "Usuarios", icon: Users, count: "1" },
-  { page: "settings-templates" as Page, label: "Modelos de relatorio", icon: ClipboardCheck, count: "1" },
+  { page: "settings-users" as Page, label: "Usuários", icon: Users, count: "1" },
+  { page: "settings-templates" as Page, label: "Modelos de relatório", icon: ClipboardCheck, count: "1" },
   { page: "settings-catalogs" as Page, label: "Cadastros", icon: ListChecks, count: "4" }
 ];
 
@@ -99,7 +99,7 @@ function TopNav({ activePage, onNavigate, onCreate }: { activePage: Page; onNavi
         <button className="language">PT-BR</button>
         <button className="create-button" onClick={onCreate}>
           <Plus size={17} />
-          Criar
+          ADICIONAR
         </button>
         <div className="user-chip">
           <span>JO</span>
@@ -117,19 +117,15 @@ function ProjectsPage({ onOpenProject, onAddProject }: { onOpenProject: () => vo
   return (
     <section className="page narrow">
       <div className="page-toolbar">
-        <h1>Projetos (1)</h1>
+        <h1>Obras (1)</h1>
         <div className="filters">
-          <IconInput icon={Search} placeholder="Buscar" />
+          <IconInput icon={Search} placeholder="Pesquisa" />
           <select>
             <option>Todos os projetos</option>
           </select>
           <select>
             <option>Todos os status</option>
           </select>
-          <button className="primary-action" onClick={onAddProject}>
-            <Plus size={18} />
-            Adicionar
-          </button>
         </div>
       </div>
       <div className="project-grid">
@@ -152,12 +148,12 @@ function ProjectsPage({ onOpenProject, onAddProject }: { onOpenProject: () => vo
 
 function ProjectOverview({ onBack, onReports }: { onBack: () => void; onReports: () => void }) {
   const cards = [
-    { label: "Relatorios", value: 0, icon: CalendarDays },
+    { label: "Relatórios", value: 0, icon: CalendarDays },
     { label: "Atividades", value: 0, icon: ListChecks },
-    { label: "Ocorrencias", value: 0, icon: ShieldCheck },
-    { label: "Comentarios", value: 0, icon: MessageSquare },
+    { label: "Ocorrências", value: 0, icon: ShieldCheck },
+    { label: "Comentários", value: 0, icon: MessageSquare },
     { label: "Fotos", value: 0, icon: Camera },
-    { label: "Videos", value: 0, icon: Video }
+    { label: "Vídeos", value: 0, icon: Video }
   ];
 
   return (
@@ -172,11 +168,11 @@ function ProjectOverview({ onBack, onReports }: { onBack: () => void; onReports:
         </div>
         <button className="side-link active">
           <BarChart3 size={16} />
-          Visao geral
+          Visão geral
         </button>
         <button className="side-link" onClick={onReports}>
           <ClipboardList size={16} />
-          Relatorios <span>0</span>
+          Relatórios <span>0</span>
         </button>
         <button className="side-link">
           <Search size={16} />
@@ -198,24 +194,24 @@ function ProjectOverview({ onBack, onReports }: { onBack: () => void; onReports:
           ))}
         </div>
         <div className="split-panels">
-          <EmptyPanel title="Relatorios recentes" icon={ClipboardList} text="Nenhum relatorio encontrado" />
+          <EmptyPanel title="Relatórios recentes" icon={ClipboardList} text="Nenhum relatório encontrado" />
           <EmptyPanel title="Fotos recentes" icon={Camera} text="Nenhuma foto encontrada" />
         </div>
         <section className="panel">
           <div className="panel-header">
-            <h2>Informacoes do projeto</h2>
+            <h2>Informações do projeto</h2>
             <button className="link-button">Editar</button>
           </div>
           <div className="project-info-grid">
             <Info label="Status" value={project.status} badge />
             <Info label="Contrato" value={project.contract} />
             <Info label="Tempo decorrido" value={project.elapsedTime} progress />
-            <Info label="Endereco" value={project.address} />
+            <Info label="Endereço" value={project.address} />
             <Info label="Prazo contratual" value={project.contractualDeadline} />
             <Info label="Tempo restante" value={project.timeLeft} />
-            <Info label="Responsavel" value={project.responsible} />
+            <Info label="Responsável" value={project.responsible} />
             <Info label="Contratante" value={project.contractor} />
-            <Info label="Inicio" value={project.startDate} />
+            <Info label="Início" value={project.startDate} />
             <Info label="Fim previsto" value={project.expectedEndDate} />
           </div>
         </section>
@@ -228,9 +224,9 @@ function ReportsPage({ onAddReport }: { onAddReport: () => void }) {
   return (
     <section className="page wide">
       <div className="page-toolbar">
-        <h1>Relatorios</h1>
+        <h1>Relatórios</h1>
         <div className="filters">
-          <IconInput icon={Search} placeholder="Buscar relatorio" />
+          <IconInput icon={Search} placeholder="Buscar relatório" />
           <select>
             <option>{project.name}</option>
           </select>
@@ -246,26 +242,26 @@ function ReportsPage({ onAddReport }: { onAddReport: () => void }) {
       <div className="report-workspace">
         <section className="panel">
           <div className="panel-header">
-            <h2>Caixa de entrada de relatorios</h2>
+            <h2>Caixa de entrada de relatórios</h2>
             <span className="badge gray">Rascunho</span>
           </div>
           <div className="report-row">
             <FileText size={22} />
             <div>
               <strong>RDO - {project.startDate}</strong>
-              <span>Gerado para revisao antes da aprovacao</span>
+              <span>Gerado para revisão antes da aprovação</span>
             </div>
             <button className="secondary-action">Revisar</button>
           </div>
         </section>
         <section className="panel approval-panel">
-          <h2>Aprovacao e assinatura</h2>
-          <p>Relatorios aprovados ficam bloqueados e geram PDF com usuario, assinatura virtual, data, hora e identificador.</p>
+          <h2>Aprovação e assinatura</h2>
+          <p>Relatórios aprovados ficam bloqueados e geram PDF com usuário, assinatura virtual, data, hora e identificador.</p>
           <div className="approval-meta">
-            <span>ID do usuario</span>
+            <span>ID do usuário</span>
             <span>Assinatura virtual</span>
-            <span>Hash do relatorio</span>
-            <span>Versao do PDF</span>
+            <span>Hash do relatório</span>
+            <span>Versão do PDF</span>
           </div>
         </section>
       </div>
@@ -276,16 +272,16 @@ function ReportsPage({ onAddReport }: { onAddReport: () => void }) {
 function AnalysisPage() {
   return (
     <section className="page wide">
-      <h1>Analise de dados</h1>
+      <h1>Análise de dados</h1>
       <div className="dashboard-grid">
-        <Metric title="Relatorios aprovados" value="0" />
-        <Metric title="Pendencias" value="0" />
-        <Metric title="Ocorrencias abertas" value="0" />
+        <Metric title="Relatórios aprovados" value="0" />
+        <Metric title="Aguardando aprovação" value="0" />
+        <Metric title="Ocorrências abertas" value="0" />
         <Metric title="Fotos anexadas" value="0" />
       </div>
       <section className="panel">
         <h2>Insights do projeto</h2>
-        <p>A primeira versao vai consolidar produtividade, ocorrencias, fotos, atrasos e pendencias a partir dos RDOs aprovados.</p>
+        <p>A primeira versão vai consolidar produtividade, ocorrências, fotos, atrasos e pendências a partir dos RDOs aprovados.</p>
       </section>
     </section>
   );
@@ -304,12 +300,12 @@ function ChatHubPage() {
         </aside>
         <section className="chat-panel">
           <div className="panel-header">
-            <h2>Concentrador de relatorios</h2>
+            <h2>Concentrador de relatórios</h2>
             <span className="badge blue">PT-BR</span>
           </div>
           <div className="message-stack">
             <div className="message inbound">Bom dia, hoje trabalhamos na alvenaria do pavimento 2.</div>
-            <div className="message system">Rascunho criado. Faltam mao de obra, equipamentos e ocorrencias.</div>
+            <div className="message system">Rascunho criado. Faltam mão de obra, equipamentos e ocorrências.</div>
             <div className="message outbound">Quantos profissionais estavam na obra hoje?</div>
           </div>
           <div className="chat-composer">
@@ -332,7 +328,7 @@ function SettingsLayout({ activePage, onNavigate }: { activePage: Page; onNaviga
   return (
     <div className="settings-layout">
       <aside className="settings-sidebar">
-        <span className="sidebar-title">Configuracoes</span>
+        <span className="sidebar-title">Configurações</span>
         {settingsItems.map((item) => (
           <button className={activePage === item.page ? "side-link active" : "side-link"} key={item.page} onClick={() => onNavigate(item.page)}>
             <item.icon size={16} />
@@ -343,7 +339,7 @@ function SettingsLayout({ activePage, onNavigate }: { activePage: Page; onNaviga
         <span className="sidebar-title">Editar projeto</span>
         <button className="side-link">
           <HardHat size={16} />
-          Predefinir mao de obra
+          Predefinir mão de obra
         </button>
         <button className="side-link">
           <Wrench size={16} />
@@ -361,7 +357,7 @@ function ProfileSettings() {
   return (
     <div className="settings-grid">
       <section className="panel form-panel">
-        <h2>Informacoes do usuario</h2>
+        <h2>Informações do usuário</h2>
         <div className="avatar-upload">
           <ClipboardCheck size={44} />
           <button className="small-primary">
@@ -406,7 +402,7 @@ function UsersSettings() {
   return (
     <section className="page-inner">
       <div className="page-toolbar compact">
-        <h1>Usuarios (1)</h1>
+        <h1>Usuários (1)</h1>
         <div className="filters">
           <IconInput icon={Search} placeholder="Buscar" />
           <select>
@@ -447,7 +443,7 @@ function TemplatesSettings() {
   return (
     <section className="page-inner">
       <div className="page-toolbar compact">
-        <h1>Modelos de relatorio (1)</h1>
+        <h1>Modelos de relatório (1)</h1>
         <button className="primary-action">
           <Plus size={18} />
           Adicionar
@@ -456,7 +452,7 @@ function TemplatesSettings() {
       <section className="panel">
         <div className="notice">Depois de adicionar modelos, habilite o modelo nos projetos em que sera usado.</div>
         <div className="template-row">
-          <span>Relatorio Diario de Obra (RDO)</span>
+          <span>Relatório Diário de Obra (RDO)</span>
           <span className="badge green">Ativo</span>
           <span className="badge gray">Padrao</span>
           <button>
@@ -465,11 +461,11 @@ function TemplatesSettings() {
         </div>
       </section>
       <section className="panel template-editor">
-        <h2>Editar modelo de relatorio</h2>
-        <label>Nome do relatorio *</label>
-        <input defaultValue="Relatorio Diario de Obra (RDO)" />
+        <h2>Editar modelo de relatório</h2>
+        <label>Nome do relatório *</label>
+        <input defaultValue="Relatório Diário de Obra (RDO)" />
         <div className="checkbox-grid">
-          {["Condicoes climaticas", "Mao de obra", "Equipamento", "Atividade", "Ocorrencia", "Checklist", "Comentario", "Fotos", "Video", "Anexo", "Assinatura"].map((item) => (
+          {["Condições climáticas", "Mão de obra", "Equipamento", "Atividade", "Ocorrência", "Checklist", "Comentário", "Fotos", "Vídeo", "Anexo", "Assinatura"].map((item) => (
             <label key={item}>
               <input type="checkbox" defaultChecked />
               {item}
@@ -488,7 +484,7 @@ function TemplatesSettings() {
 function CatalogSettings() {
   return (
     <section className="catalog-grid">
-      <CatalogPanel title="Mao de obra" icon={HardHat} items={labor} />
+      <CatalogPanel title="Mão de obra" icon={HardHat} items={labor} />
       <CatalogPanel title="Equipamentos" icon={Wrench} items={equipment} />
       <CatalogPanel title="Tipos de ocorrencia" icon={ShieldCheck} items={occurrences} />
       <section className="panel">
@@ -540,10 +536,10 @@ function AddProjectModal({ onClose }: { onClose: () => void }) {
       <input placeholder="Ex: Shopping Central" />
       {mode === "complete" && (
         <div className="form-grid">
-          <Field label="Responsavel" placeholder="Ex: Engenheiro Peter" />
+          <Field label="Responsável" placeholder="Ex: Engenheiro Peter" />
           <Field label="Tipo de contrato" select options={["Contratante", "Contratada", "Terceirizada"]} />
           <Field label="Contratante" placeholder="Ex: Prefeitura" />
-          <Field label="Data de inicio *" placeholder="dd/mm/aaaa" />
+          <Field label="Data de início *" placeholder="dd/mm/aaaa" />
           <Field label="Fim previsto *" placeholder="dd/mm/aaaa" />
           <Field label="Grupo *" select options={["Todas as obras"]} />
           <Field label="Contrato" placeholder="Numero do contrato" />
@@ -556,7 +552,7 @@ function AddProjectModal({ onClose }: { onClose: () => void }) {
           <Field label="Grupo *" select options={["Todas as obras"]} />
         </div>
       )}
-      <label>Endereco</label>
+      <label>Endereço</label>
       <input placeholder="Ex: Av. ABC, 100, Centro" />
       <label className="check-line">
         <input type="checkbox" />
@@ -576,21 +572,21 @@ function AddProjectModal({ onClose }: { onClose: () => void }) {
 
 function AddReportModal({ onClose }: { onClose: () => void }) {
   return (
-    <Modal title="Adicionar relatorio" onClose={onClose}>
+    <Modal title="Adicionar relatório" onClose={onClose}>
       <label>Selecione o projeto *</label>
       <select>
         <option>{project.name}</option>
       </select>
-      <label>Data do relatorio *</label>
+      <label>Data do relatório *</label>
       <input placeholder="dd/mm/aaaa" />
       <div className="copy-options">
         <label>
           <input type="checkbox" defaultChecked />
-          Copiar informacoes do ultimo relatorio
+          Copiar informações do último relatório
         </label>
         <label>
           <input type="checkbox" />
-          Copiar de um relatorio especifico
+          Copiar de um relatório específico
         </label>
       </div>
       <div className="modal-actions">
@@ -654,7 +650,7 @@ function EmptyPanel({ title, icon: Icon, text }: { title: string; icon: typeof C
       <div>
         <Icon size={42} />
         <strong>{text}</strong>
-        <span>Adicione dados ao relatorio para acompanhar a evolucao.</span>
+        <span>Adicione dados ao relatório para acompanhar a evolução.</span>
       </div>
     </section>
   );
@@ -717,4 +713,3 @@ function CatalogPanel({ title, icon: Icon, items }: { title: string; icon: typeo
 }
 
 export default App;
-

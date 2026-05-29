@@ -19,7 +19,7 @@ export const projects: Project[] = [
     responsible: "ENGENHEIRO TESTE",
     contractor: "PREFEITURA TESTE",
     contract: "1234567890",
-    address: "ENDERECO TESTE",
+    address: "ENDEREÇO TESTE",
     startDate: "2026-05-12",
     expectedEndDate: "2026-11-11",
     taskListEnabled: false,
@@ -30,7 +30,7 @@ export const projects: Project[] = [
 export const reportTemplates: ReportTemplate[] = [
   {
     id: "template-rdo",
-    name: "Relatorio Diario de Obra (RDO)",
+    name: "Relatório Diário de Obra (RDO)",
     status: "active",
     type: "standard",
     dateType: "daily",
@@ -55,28 +55,28 @@ export const labor: CatalogItem[] = [
   "Ajudante",
   "Eletricista",
   "Engenheiro",
-  "Estagiario",
+  "Estagiário",
   "Gesseiro",
   "Mestre de Obra",
   "Pedreiro",
   "Servente",
-  "Tecnico em Edificacoes"
+  "Técnico em Edificações"
 ].map((description, index) => ({
   id: `labor-${index + 1}`,
   description,
-  group: "Mao de Obra Propria",
+  group: "Mão de Obra Própria",
   status: "active",
   sourceType: "standard"
 }));
 
 export const equipment: CatalogItem[] = [
   "Betoneira",
-  "Caminhao Basculante",
+  "Caminhão Basculante",
   "Compactador de solo",
   "Escavadeira",
   "Guindaste",
   "Picareta",
-  "Pa Carregadeira",
+  "Pá Carregadeira",
   "Retro Escavadeira"
 ].map((description, index) => ({
   id: `equipment-${index + 1}`,
@@ -87,16 +87,16 @@ export const equipment: CatalogItem[] = [
 
 export const occurrenceTypes: CatalogItem[] = [
   "Acidente de trabalho",
-  "Alteracao de projeto",
+  "Alteração de projeto",
   "Dia Chuvoso",
   "Dia parado",
   "Falta de equipamento",
   "Falta de material",
-  "Falta de mao de obra",
+  "Falta de mão de obra",
   "Horas Improdutivas",
   "Retrabalho",
-  "Solicitacao fora do escopo",
-  "Solicitacoes do cliente"
+  "Solicitação fora do escopo",
+  "Solicitações do cliente"
 ].map((description, index) => ({
   id: `occurrence-${index + 1}`,
   description,
@@ -134,4 +134,3 @@ export const reports: Report[] = [
     createdAt: "2026-05-12T12:00:00-03:00"
   }
 ];
-

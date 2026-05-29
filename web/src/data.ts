@@ -2,7 +2,7 @@ export const project = {
   name: "PROJETO TESTE",
   status: "Em andamento",
   contract: "1234567890",
-  address: "ENDERECO TESTE",
+  address: "ENDEREÇO TESTE",
   responsible: "ENGENHEIRO TESTE",
   contractor: "PREFEITURA TESTE",
   startDate: "12/05/2026",
@@ -16,36 +16,35 @@ export const labor = [
   "Ajudante",
   "Eletricista",
   "Engenheiro",
-  "Estagiario",
+  "Estagiário",
   "Gesseiro",
   "Mestre de Obra",
   "Pedreiro",
   "Servente",
-  "Tecnico em Edificacoes"
+  "Técnico em Edificações"
 ];
 
 export const equipment = [
   "Betoneira",
-  "Caminhao Basculante",
+  "Caminhão Basculante",
   "Compactador de solo",
   "Escavadeira",
   "Guindaste",
   "Picareta",
-  "Pa Carregadeira",
+  "Pá Carregadeira",
   "Retro Escavadeira"
 ];
 
 export const occurrences = [
   "Acidente de trabalho",
-  "Alteracao de projeto",
+  "Alteração de projeto",
   "Dia Chuvoso",
   "Dia parado",
   "Falta de equipamento",
   "Falta de material",
-  "Falta de mao de obra",
+  "Falta de mão de obra",
   "Horas Improdutivas",
   "Retrabalho",
-  "Solicitacao fora do escopo",
-  "Solicitacoes do cliente"
+  "Solicitação fora do escopo",
+  "Solicitações do cliente"
 ];
-
