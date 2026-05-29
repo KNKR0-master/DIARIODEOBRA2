@@ -90,6 +90,12 @@ Allow a construction company to create projects, configure report templates, rec
 9. Audio transcription integration.
 10. Chatbot report flow.
 
+## Current Implementation Status
+
+- Completed: benchmarking workflow, web shell, project/settings prototype, seed APIs, report template/catalog APIs, and the first functional RDO workflow.
+- The functional RDO workflow now supports create draft, edit sections, send to review, approve, store approval metadata, generate a virtual signature ID, reserve a PDF version ID, calculate a report hash, and block edits after approval.
+- The current storage is still in-memory seed data. Database persistence, real users/permissions, real PDF generation, audit log persistence, WhatsApp intake, and audio transcription remain next-stage work.
+
 ## Implementation Gate
 
 Before changing layout to match a competitor more closely:

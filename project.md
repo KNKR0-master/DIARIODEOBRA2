@@ -237,6 +237,18 @@ The first useful version should include:
 - Immutable approved reports with virtual signature and audit metadata.
 - PDF generation after report approval.
 
+## Current Milestone
+
+The first functional web/backend slice is now the RDO approval workflow:
+
+- Create a project.
+- Create an RDO draft.
+- Fill structured RDO sections in the web editor.
+- Send the report to review.
+- Approve the report.
+- Store approval metadata, virtual signature ID, reserved PDF version ID, and report hash.
+- Lock approved reports against direct edits.
+
 ## Future Scope
 
 - Photo analysis.

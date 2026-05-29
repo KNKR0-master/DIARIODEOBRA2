@@ -42,9 +42,11 @@ backend/
 web/
   src/
     App.tsx
+    api.ts
     data.ts
     main.tsx
     styles.css
+    vite-env.d.ts
 ```
 
 ## Backend Boundaries
@@ -163,8 +165,8 @@ Rules:
 
 ### Local
 
-- Web app on port `5173`.
-- Backend API on port `5099`.
+- Web app on port `5188`.
+- Backend API on port `5100`.
 
 ### Environment Variables
 
@@ -188,3 +190,26 @@ Required variables for real competitor collection:
 
 - `BENCHMARK_TARGET_URL`.
 - `FIRECRAWL_API_KEY` for Firecrawl.
+
+## Implemented API Surface
+
+Current in-memory API routes:
+
+- `GET /health`.
+- `GET /api/bootstrap`.
+- `GET /api/projects`.
+- `POST /api/projects`.
+- `GET /api/projects/:id/overview`.
+- `GET /api/reports`.
+- `POST /api/reports`.
+- `GET /api/reports/:id`.
+- `PATCH /api/reports/:id`.
+- `POST /api/reports/:id/submit-review`.
+- `POST /api/reports/:id/approve`.
+- `POST /api/reports/:id/reject`.
+- `GET /api/report-templates`.
+- `GET /api/catalogs/labor`.
+- `GET /api/catalogs/equipment`.
+- `GET /api/catalogs/occurrence-types`.
+- `GET /api/catalogs/checklists`.
+- `POST /api/whatsapp/webhook`.

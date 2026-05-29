@@ -62,17 +62,32 @@ export interface ChecklistItem {
   answers: string[];
 }
 
+export interface ReportSections {
+  weather: string;
+  labor: string;
+  equipment: string;
+  activities: string;
+  occurrences: string;
+  comments: string;
+  checklistNotes: string;
+}
+
 export interface Report {
   id: string;
+  number: number;
   projectId: string;
   templateId: string;
   reportDate: string;
   status: ReportStatus;
   creatorUserId: string;
+  creatorName: string;
   createdAt: string;
+  submittedAt?: string;
+  sections: ReportSections;
   approvedAt?: string;
   approverUserId?: string;
+  approverName?: string;
   signatureId?: string;
   pdfVersionId?: string;
+  hash?: string;
 }
-

@@ -271,3 +271,17 @@ Approved reports must clearly display:
 - PDF version.
 
 Approved records are read-only. Any correction action should create a revision or amendment flow.
+
+## First Functional Frontend Wireframe
+
+The first implemented frontend wireframe is now:
+
+1. Obras list with add project action.
+2. Project overview with report counters and recent RDOs.
+3. Reports inbox filtered by selected project.
+4. Add RDO modal with project, template, date, and copy-from-last option.
+5. RDO detail/editor with weather, labor, equipment, activities, occurrences, checklist notes, and comments.
+6. Lifecycle buttons: save draft, send to review, approve report.
+7. Approved report lock state with creator, approver, creation time, approval time, virtual signature ID, PDF version ID, and hash prefix.
+
+This is the first functional product structure. It is intentionally not the final UI.

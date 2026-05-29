@@ -262,3 +262,20 @@ MVP behavior:
 - Report approval metadata.
 - PDF links after approval.
 
+## First Implemented Backend Workflow
+
+The first functional backend workflow is in-memory and supports:
+
+- Creating a project.
+- Listing projects and project overview counters.
+- Listing report templates and pre-registration catalogs.
+- Creating an RDO draft for a project.
+- Copying sections from the last project report.
+- Editing draft/revised report sections.
+- Sending a report to review.
+- Approving a pending report.
+- Storing creator, approver, timestamps, virtual signature ID, PDF version ID, and SHA-256 report hash.
+- Rejecting a pending report.
+- Blocking edits to approved reports with HTTP `409`.
+
+The next backend stage should move reports, projects, templates, users, signatures, and audit events from seed arrays to a database-backed persistence layer.

@@ -126,11 +126,22 @@ export const checklists: ChecklistTemplate[] = [
 export const reports: Report[] = [
   {
     id: "report-draft-1",
+    number: 1,
     projectId: "project-test",
     templateId: "template-rdo",
     reportDate: "2026-05-12",
     status: "draft",
     creatorUserId: "user-joao",
-    createdAt: "2026-05-12T12:00:00-03:00"
+    creatorName: "JOAO VICTOR",
+    createdAt: "2026-05-12T12:00:00-03:00",
+    sections: {
+      weather: "Manha com tempo aberto e tarde nublada.",
+      labor: "Engenheiro: 1\nMestre de obra: 1\nPedreiro: 2\nServente: 3",
+      equipment: "Betoneira: 1\nPá carregadeira: 1",
+      activities: "Execucao de alvenaria no pavimento 2 e conferencia de prumo.",
+      occurrences: "Sem ocorrencias criticas registradas.",
+      comments: "Frente liberada para continuidade no proximo dia util.",
+      checklistNotes: "Conferencia visual realizada pelo responsavel da obra."
+    }
   }
 ];
