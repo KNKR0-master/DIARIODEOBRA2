@@ -1,8 +1,8 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import { database } from "../data/database.js";
-import type { AuditLog, ContractType, PdfVersion, Project, ProjectStatus, Report, ReportSections } from "../types.js";
+import type { AuditLog, CatalogItem, ChecklistTemplate, ContractType, PdfVersion, Project, ProjectStatus, Report, ReportSections, ReportTemplate, User } from "../types.js";
 
 const defaultActor = {
   actorUserId: "user-joao",
@@ -22,6 +22,48 @@ const createProjectSchema = z.object({
   expectedEndDate: z.string().optional().default(""),
   taskListEnabled: z.boolean().optional().default(false),
   requirePhotos: z.boolean().optional().default(false)
+});
+
+const updateProjectSchema = createProjectSchema;
+
+const userSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  jobTitle: z.string().optional().default(""),
+  accessProfile: z.enum(["administrator", "customized", "field_user", "reviewer_approver", "client_read_only"]).default("field_user"),
+  status: z.enum(["active", "inactive"]).default("active")
+});
+
+const reportTemplateSchema = z.object({
+  name: z.string().min(1),
+  status: z.enum(["active", "inactive"]).default("active"),
+  type: z.enum(["standard", "customized"]).default("customized"),
+  dateType: z.enum(["daily", "period"]).default("daily"),
+  enabledItems: z.array(z.string()).min(1),
+  signaturePdfDisplay: z.enum(["last_page", "all_pages"]).default("last_page")
+});
+
+const catalogItemSchema = z.object({
+  description: z.string().min(1),
+  group: z.string().optional().default(""),
+  status: z.enum(["active", "inactive"]).default("active"),
+  sourceType: z.enum(["standard", "customized"]).default("customized")
+});
+
+const checklistItemSchema = z.object({
+  id: z.string().optional(),
+  order: z.number().int().positive(),
+  itemLabel: z.string().min(1),
+  question: z.string().min(1),
+  answerType: z.enum(["checkbox", "text", "number", "date", "photo", "single_choice", "multiple_choice"]).default("checkbox"),
+  allowMultipleResponses: z.boolean().default(false),
+  answers: z.array(z.string()).default([])
+});
+
+const checklistSchema = z.object({
+  name: z.string().min(1),
+  status: z.enum(["active", "inactive"]).default("active"),
+  items: z.array(checklistItemSchema).min(1)
 });
 
 const reportSectionsSchema = z.object({
@@ -66,6 +108,14 @@ const emptySections = (): ReportSections => ({
 
 const nowIso = () => new Date().toISOString();
 
+const catalogKinds = {
+  labor: "labor",
+  equipment: "equipment",
+  occurrences: "occurrence_type"
+} as const;
+
+const getCatalogKind = (kind: string) => catalogKinds[kind as keyof typeof catalogKinds];
+
 const buildReportHash = (report: Report) =>
   createHash("sha256")
     .update(
@@ -106,6 +156,61 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.get("/api/users", async () => ({ users: database.listUsers() }));
 
+  app.post("/api/users", async (request, reply) => {
+    const parsedBody = userSchema.safeParse(request.body);
+
+    if (!parsedBody.success) {
+      return reply.code(400).send({ error: "Invalid user payload", details: parsedBody.error.flatten() });
+    }
+
+    const payload = parsedBody.data;
+    const user: User = {
+      id: `user-${randomUUID()}`,
+      companyId: database.getCompany().id,
+      name: payload.name,
+      email: payload.email,
+      jobTitle: payload.jobTitle,
+      accessProfile: payload.accessProfile,
+      status: payload.status,
+      signatureId: `sig-user-${randomUUID().slice(0, 8)}-virtual`,
+      createdAt: nowIso()
+    };
+
+    return reply.code(201).send({ user: database.createUser(user, defaultActor) });
+  });
+
+  app.patch("/api/users/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const existingUser = database.getUser(id);
+
+    if (!existingUser) {
+      return reply.code(404).send({ error: "User not found" });
+    }
+
+    const parsedBody = userSchema.safeParse(request.body);
+
+    if (!parsedBody.success) {
+      return reply.code(400).send({ error: "Invalid user payload", details: parsedBody.error.flatten() });
+    }
+
+    const payload = parsedBody.data;
+    const user: User = {
+      ...existingUser,
+      name: payload.name,
+      email: payload.email,
+      jobTitle: payload.jobTitle,
+      accessProfile: payload.accessProfile,
+      status: payload.status
+    };
+
+    const updatedUser = database.updateUser(user, defaultActor);
+    if (!updatedUser) {
+      return reply.code(404).send({ error: "User not found" });
+    }
+
+    return { user: updatedUser };
+  });
+
   app.get("/api/projects", async () => ({ projects: database.listProjects() }));
 
   app.post("/api/projects", async (request, reply) => {
@@ -117,7 +222,7 @@ export async function registerRoutes(app: FastifyInstance) {
 
     const payload = parsedBody.data;
     const project: Project = {
-      id: `project-${Date.now()}`,
+      id: `project-${randomUUID()}`,
       companyId: database.getCompany().id,
       name: payload.name,
       status: payload.status as ProjectStatus,
@@ -134,6 +239,45 @@ export async function registerRoutes(app: FastifyInstance) {
     };
 
     return reply.code(201).send({ project: database.createProject(project, defaultActor) });
+  });
+
+  app.patch("/api/projects/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const existingProject = database.getProject(id);
+
+    if (!existingProject) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    const parsedBody = updateProjectSchema.safeParse(request.body);
+
+    if (!parsedBody.success) {
+      return reply.code(400).send({ error: "Invalid project payload", details: parsedBody.error.flatten() });
+    }
+
+    const payload = parsedBody.data;
+    const project: Project = {
+      ...existingProject,
+      name: payload.name,
+      status: payload.status as ProjectStatus,
+      group: payload.group,
+      contractType: payload.contractType as ContractType,
+      responsible: payload.responsible,
+      contractor: payload.contractor,
+      contract: payload.contract,
+      address: payload.address,
+      startDate: payload.startDate,
+      expectedEndDate: payload.expectedEndDate,
+      taskListEnabled: payload.taskListEnabled,
+      requirePhotos: payload.requirePhotos
+    };
+
+    const updatedProject = database.updateProject(project, defaultActor);
+    if (!updatedProject) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    return { project: updatedProject };
   });
 
   app.get("/api/projects/:id/overview", async (request, reply) => {
@@ -189,7 +333,7 @@ export async function registerRoutes(app: FastifyInstance) {
     const lastReport = database.getLastReport(payload.projectId);
     const number = database.nextReportNumber();
     const report: Report = {
-      id: `report-${number}-${Date.now()}`,
+      id: `report-${number}-${randomUUID()}`,
       number,
       projectId: payload.projectId,
       templateId: payload.templateId,
@@ -395,6 +539,60 @@ export async function registerRoutes(app: FastifyInstance) {
 
   app.get("/api/report-templates", async () => ({ reportTemplates: database.listReportTemplates() }));
 
+  app.post("/api/report-templates", async (request, reply) => {
+    const parsedBody = reportTemplateSchema.safeParse(request.body);
+
+    if (!parsedBody.success) {
+      return reply.code(400).send({ error: "Invalid report template payload", details: parsedBody.error.flatten() });
+    }
+
+    const payload = parsedBody.data;
+    const reportTemplate: ReportTemplate = {
+      id: `template-${randomUUID()}`,
+      name: payload.name,
+      status: payload.status,
+      type: payload.type,
+      dateType: payload.dateType,
+      enabledItems: payload.enabledItems,
+      signaturePdfDisplay: payload.signaturePdfDisplay
+    };
+
+    return reply.code(201).send({ reportTemplate: database.createReportTemplate(reportTemplate, defaultActor) });
+  });
+
+  app.patch("/api/report-templates/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const existingTemplate = database.getReportTemplate(id);
+
+    if (!existingTemplate) {
+      return reply.code(404).send({ error: "Report template not found" });
+    }
+
+    const parsedBody = reportTemplateSchema.safeParse(request.body);
+
+    if (!parsedBody.success) {
+      return reply.code(400).send({ error: "Invalid report template payload", details: parsedBody.error.flatten() });
+    }
+
+    const payload = parsedBody.data;
+    const reportTemplate: ReportTemplate = {
+      ...existingTemplate,
+      name: payload.name,
+      status: payload.status,
+      type: payload.type,
+      dateType: payload.dateType,
+      enabledItems: payload.enabledItems,
+      signaturePdfDisplay: payload.signaturePdfDisplay
+    };
+
+    const updatedTemplate = database.updateReportTemplate(reportTemplate, defaultActor);
+    if (!updatedTemplate) {
+      return reply.code(404).send({ error: "Report template not found" });
+    }
+
+    return { reportTemplate: updatedTemplate };
+  });
+
   app.get("/api/catalogs/labor", async () => ({ labor: database.listCatalog("labor") }));
 
   app.get("/api/catalogs/equipment", async () => ({ equipment: database.listCatalog("equipment") }));
@@ -402,6 +600,133 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get("/api/catalogs/occurrence-types", async () => ({ occurrenceTypes: database.listCatalog("occurrence_type") }));
 
   app.get("/api/catalogs/checklists", async () => ({ checklists: database.listChecklists() }));
+
+  app.post("/api/catalogs/items/:kind", async (request, reply) => {
+    const { kind } = request.params as { kind: string };
+    const catalogKind = getCatalogKind(kind);
+
+    if (!catalogKind) {
+      return reply.code(400).send({ error: "Invalid catalog kind" });
+    }
+
+    const parsedBody = catalogItemSchema.safeParse(request.body);
+
+    if (!parsedBody.success) {
+      return reply.code(400).send({ error: "Invalid catalog payload", details: parsedBody.error.flatten() });
+    }
+
+    const payload = parsedBody.data;
+    const item: CatalogItem = {
+      id: `${catalogKind}-${randomUUID()}`,
+      description: payload.description,
+      group: payload.group || undefined,
+      status: payload.status,
+      sourceType: payload.sourceType
+    };
+
+    return reply.code(201).send({ item: database.createCatalogItem(catalogKind, item, defaultActor) });
+  });
+
+  app.patch("/api/catalogs/items/:kind/:id", async (request, reply) => {
+    const { kind, id } = request.params as { kind: string; id: string };
+    const catalogKind = getCatalogKind(kind);
+
+    if (!catalogKind) {
+      return reply.code(400).send({ error: "Invalid catalog kind" });
+    }
+
+    const existingItem = database.getCatalogItem(id);
+
+    if (!existingItem) {
+      return reply.code(404).send({ error: "Catalog item not found" });
+    }
+
+    const parsedBody = catalogItemSchema.safeParse(request.body);
+
+    if (!parsedBody.success) {
+      return reply.code(400).send({ error: "Invalid catalog payload", details: parsedBody.error.flatten() });
+    }
+
+    const payload = parsedBody.data;
+    const item: CatalogItem = {
+      ...existingItem,
+      description: payload.description,
+      group: payload.group || undefined,
+      status: payload.status,
+      sourceType: payload.sourceType
+    };
+
+    const updatedItem = database.updateCatalogItem(catalogKind, item, defaultActor);
+    if (!updatedItem) {
+      return reply.code(404).send({ error: "Catalog item not found" });
+    }
+
+    return { item: updatedItem };
+  });
+
+  app.post("/api/catalogs/checklists", async (request, reply) => {
+    const parsedBody = checklistSchema.safeParse(request.body);
+
+    if (!parsedBody.success) {
+      return reply.code(400).send({ error: "Invalid checklist payload", details: parsedBody.error.flatten() });
+    }
+
+    const payload = parsedBody.data;
+    const checklist: ChecklistTemplate = {
+      id: `checklist-${randomUUID()}`,
+      name: payload.name,
+      status: payload.status,
+      items: payload.items.map((item, index) => ({
+        id: item.id ?? `checklist-item-${randomUUID()}-${index}`,
+        order: item.order,
+        itemLabel: item.itemLabel,
+        question: item.question,
+        answerType: item.answerType,
+        allowMultipleResponses: item.allowMultipleResponses,
+        answers: item.answers
+      }))
+    };
+
+    return reply.code(201).send({ checklist: database.createChecklist(checklist, defaultActor) });
+  });
+
+  app.patch("/api/catalogs/checklists/:id", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const existingChecklist = database.getChecklist(id);
+
+    if (!existingChecklist) {
+      return reply.code(404).send({ error: "Checklist not found" });
+    }
+
+    const parsedBody = checklistSchema.safeParse(request.body);
+
+    if (!parsedBody.success) {
+      return reply.code(400).send({ error: "Invalid checklist payload", details: parsedBody.error.flatten() });
+    }
+
+    const payload = parsedBody.data;
+    const checklist: ChecklistTemplate = {
+      ...existingChecklist,
+      name: payload.name,
+      status: payload.status,
+      items: payload.items.map((item, index) => ({
+        id: item.id ?? `checklist-item-${randomUUID()}-${index}`,
+        order: item.order,
+        itemLabel: item.itemLabel,
+        question: item.question,
+        answerType: item.answerType,
+        allowMultipleResponses: item.allowMultipleResponses,
+        answers: item.answers
+      }))
+    };
+
+    const updatedChecklist = database.updateChecklist(checklist, defaultActor);
+    if (!updatedChecklist) {
+      return reply.code(404).send({ error: "Checklist not found" });
+    }
+
+    return { checklist: updatedChecklist };
+  });
 
   app.post("/api/whatsapp/webhook", async (request, reply) => {
     return reply.code(202).send({

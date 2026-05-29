@@ -787,10 +787,22 @@ input {
 .modal {
   background: #fff;
   border-radius: 4px;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   max-height: calc(100vh - 40px);
   max-width: 600px;
-  overflow: auto;
+  overflow: hidden;
   width: min(600px, 100%);
+}
+
+.wide-modal {
+  max-width: 700px;
+  width: min(700px, 100%);
+}
+
+.compact-modal {
+  max-width: 660px;
+  width: min(660px, 100%);
 }
 
 .modal-header {
@@ -809,6 +821,7 @@ input {
 .modal-body {
   display: grid;
   gap: 13px;
+  overflow: auto;
   padding: 16px;
 }
 
@@ -830,6 +843,10 @@ input {
   grid-template-columns: repeat(3, 1fr);
 }
 
+.compact-form-grid {
+  gap: 10px 14px;
+}
+
 .form-grid.simple {
   grid-template-columns: repeat(2, 1fr);
 }
@@ -838,6 +855,19 @@ input {
 .field-block {
   display: grid;
   gap: 6px;
+  min-width: 0;
+}
+
+.modal input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.modal select,
+.modal textarea {
+  min-width: 0;
+  width: 100%;
+}
+
+.modal input[type="checkbox"],
+.modal input[type="radio"] {
+  min-height: auto;
 }
 
 label {
@@ -859,6 +889,26 @@ label {
   justify-content: flex-end;
   margin: 8px -16px -16px;
   padding: 16px;
+}
+
+.signature-pad-preview {
+  align-items: center;
+  background: #fbfcfe;
+  border: 1px dashed #aeb6c2;
+  border-radius: 4px;
+  color: #172033;
+  display: flex;
+  font-family: "Brush Script MT", cursive;
+  font-size: 30px;
+  height: 120px;
+  justify-content: center;
+}
+
+.parameter-list {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  margin: 14px 0;
 }
 
 .error-banner {

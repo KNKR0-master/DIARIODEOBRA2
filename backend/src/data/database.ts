@@ -397,6 +397,75 @@ class AppDatabase {
     return project;
   }
 
+  updateProject(project: Project, actor: AuditActor) {
+    const result = this.db
+      .prepare(
+        `UPDATE projects
+         SET name = ?, status = ?, group_name = ?, contract_type = ?, responsible = ?, contractor = ?,
+             contract = ?, address = ?, start_date = ?, expected_end_date = ?, task_list_enabled = ?, require_photos = ?
+         WHERE id = ?`
+      )
+      .run(project.name, project.status, project.group, project.contractType, project.responsible, project.contractor, project.contract, project.address, project.startDate, project.expectedEndDate, toBool(project.taskListEnabled), toBool(project.requirePhotos), project.id);
+
+    if (result.changes === 0) {
+      return undefined;
+    }
+
+    this.writeAudit({
+      entityType: "project",
+      entityId: project.id,
+      eventType: "project.updated",
+      actor,
+      metadata: { name: project.name, status: project.status, requirePhotos: project.requirePhotos }
+    });
+
+    return this.getProject(project.id);
+  }
+
+  createUser(user: User, actor: AuditActor) {
+    this.db
+      .prepare(
+        `INSERT INTO users (
+          id, company_id, name, email, job_title, access_profile, status, signature_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(user.id, user.companyId, user.name, user.email, user.jobTitle, user.accessProfile, user.status, user.signatureId, user.createdAt);
+
+    this.writeAudit({
+      entityType: "user",
+      entityId: user.id,
+      eventType: "user.created",
+      actor,
+      metadata: { email: user.email, accessProfile: user.accessProfile, status: user.status }
+    });
+
+    return user;
+  }
+
+  updateUser(user: User, actor: AuditActor) {
+    const result = this.db
+      .prepare(
+        `UPDATE users
+         SET name = ?, email = ?, job_title = ?, access_profile = ?, status = ?, signature_id = ?
+         WHERE id = ?`
+      )
+      .run(user.name, user.email, user.jobTitle, user.accessProfile, user.status, user.signatureId, user.id);
+
+    if (result.changes === 0) {
+      return undefined;
+    }
+
+    this.writeAudit({
+      entityType: "user",
+      entityId: user.id,
+      eventType: "user.updated",
+      actor,
+      metadata: { email: user.email, accessProfile: user.accessProfile, status: user.status }
+    });
+
+    return this.getUser(user.id);
+  }
+
   listReportTemplates() {
     return (this.db.prepare("SELECT * FROM report_templates ORDER BY name").all() as ReportTemplateRow[]).map(toReportTemplate);
   }
@@ -406,8 +475,101 @@ class AppDatabase {
     return row ? toReportTemplate(row) : undefined;
   }
 
+  createReportTemplate(template: ReportTemplate, actor: AuditActor) {
+    this.db
+      .prepare(
+        `INSERT INTO report_templates (
+          id, name, status, type, date_type, enabled_items_json, signature_pdf_display
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(template.id, template.name, template.status, template.type, template.dateType, JSON.stringify(template.enabledItems), template.signaturePdfDisplay);
+
+    this.writeAudit({
+      entityType: "system",
+      entityId: template.id,
+      eventType: "report_template.created",
+      actor,
+      metadata: { name: template.name, enabledItems: template.enabledItems }
+    });
+
+    return template;
+  }
+
+  updateReportTemplate(template: ReportTemplate, actor: AuditActor) {
+    const result = this.db
+      .prepare(
+        `UPDATE report_templates
+         SET name = ?, status = ?, type = ?, date_type = ?, enabled_items_json = ?, signature_pdf_display = ?
+         WHERE id = ?`
+      )
+      .run(template.name, template.status, template.type, template.dateType, JSON.stringify(template.enabledItems), template.signaturePdfDisplay, template.id);
+
+    if (result.changes === 0) {
+      return undefined;
+    }
+
+    this.writeAudit({
+      entityType: "system",
+      entityId: template.id,
+      eventType: "report_template.updated",
+      actor,
+      metadata: { name: template.name, enabledItems: template.enabledItems, signaturePdfDisplay: template.signaturePdfDisplay }
+    });
+
+    return this.getReportTemplate(template.id);
+  }
+
   listCatalog(kind: "labor" | "equipment" | "occurrence_type") {
     return (this.db.prepare("SELECT * FROM catalog_items WHERE kind = ? ORDER BY description").all(kind) as CatalogItemRow[]).map(toCatalogItem);
+  }
+
+  getCatalogItem(id: string) {
+    const row = this.db.prepare("SELECT * FROM catalog_items WHERE id = ?").get(id) as CatalogItemRow | undefined;
+    return row ? toCatalogItem(row) : undefined;
+  }
+
+  createCatalogItem(kind: "labor" | "equipment" | "occurrence_type", item: CatalogItem, actor: AuditActor) {
+    this.db
+      .prepare(
+        `INSERT INTO catalog_items (
+          id, kind, description, group_name, status, source_type
+        ) VALUES (?, ?, ?, ?, ?, ?)`
+      )
+      .run(item.id, kind, item.description, item.group ?? null, item.status, item.sourceType);
+
+    this.writeAudit({
+      entityType: "system",
+      entityId: item.id,
+      eventType: `catalog.${kind}.created`,
+      actor,
+      metadata: { description: item.description, group: item.group }
+    });
+
+    return item;
+  }
+
+  updateCatalogItem(kind: "labor" | "equipment" | "occurrence_type", item: CatalogItem, actor: AuditActor) {
+    const result = this.db
+      .prepare(
+        `UPDATE catalog_items
+         SET description = ?, group_name = ?, status = ?, source_type = ?
+         WHERE id = ? AND kind = ?`
+      )
+      .run(item.description, item.group ?? null, item.status, item.sourceType, item.id, kind);
+
+    if (result.changes === 0) {
+      return undefined;
+    }
+
+    this.writeAudit({
+      entityType: "system",
+      entityId: item.id,
+      eventType: `catalog.${kind}.updated`,
+      actor,
+      metadata: { description: item.description, group: item.group, status: item.status }
+    });
+
+    return this.getCatalogItem(item.id);
   }
 
   listChecklists() {
@@ -417,6 +579,54 @@ class AppDatabase {
       const items = (this.db.prepare("SELECT * FROM checklist_items WHERE template_id = ? ORDER BY item_order").all(row.id) as ChecklistItemRow[]).map(toChecklistItem);
       return toChecklistTemplate(row, items);
     });
+  }
+
+  getChecklist(id: string) {
+    const row = this.db.prepare("SELECT * FROM checklist_templates WHERE id = ?").get(id) as ChecklistTemplateRow | undefined;
+
+    if (!row) {
+      return undefined;
+    }
+
+    const items = (this.db.prepare("SELECT * FROM checklist_items WHERE template_id = ? ORDER BY item_order").all(row.id) as ChecklistItemRow[]).map(toChecklistItem);
+    return toChecklistTemplate(row, items);
+  }
+
+  createChecklist(checklist: ChecklistTemplate, actor: AuditActor) {
+    this.withTransaction(() => {
+      this.db.prepare("INSERT INTO checklist_templates (id, name, status) VALUES (?, ?, ?)").run(checklist.id, checklist.name, checklist.status);
+      this.replaceChecklistItems(checklist);
+      this.writeAudit({
+        entityType: "system",
+        entityId: checklist.id,
+        eventType: "checklist.created",
+        actor,
+        metadata: { name: checklist.name, items: checklist.items.length }
+      });
+    });
+
+    return this.getChecklist(checklist.id) as ChecklistTemplate;
+  }
+
+  updateChecklist(checklist: ChecklistTemplate, actor: AuditActor) {
+    let changed = false;
+    this.withTransaction(() => {
+      const result = this.db.prepare("UPDATE checklist_templates SET name = ?, status = ? WHERE id = ?").run(checklist.name, checklist.status, checklist.id);
+      changed = result.changes > 0;
+
+      if (changed) {
+        this.replaceChecklistItems(checklist);
+        this.writeAudit({
+          entityType: "system",
+          entityId: checklist.id,
+          eventType: "checklist.updated",
+          actor,
+          metadata: { name: checklist.name, items: checklist.items.length }
+        });
+      }
+    });
+
+    return changed ? this.getChecklist(checklist.id) : undefined;
   }
 
   listReports(filters: { projectId?: string; status?: string } = {}) {
@@ -636,6 +846,20 @@ class AppDatabase {
         ) VALUES (?, ?, ?, ?, ?, ?, ?)`
       )
       .run(pdfVersion.id, pdfVersion.reportId, pdfVersion.versionNumber, pdfVersion.status, pdfVersion.filePath ?? null, pdfVersion.createdAt, JSON.stringify(pdfVersion.metadata));
+  }
+
+  private replaceChecklistItems(checklist: ChecklistTemplate) {
+    this.db.prepare("DELETE FROM checklist_items WHERE template_id = ?").run(checklist.id);
+
+    for (const item of checklist.items) {
+      this.db
+        .prepare(
+          `INSERT INTO checklist_items (
+            id, template_id, item_order, item_label, question, answer_type, allow_multiple_responses, answers_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(item.id, checklist.id, item.order, item.itemLabel, item.question, item.answerType, toBool(item.allowMultipleResponses), JSON.stringify(item.answers));
+    }
   }
 
   private writeAudit(input: { entityType: AuditLog["entityType"]; entityId: string; eventType: string; actor: AuditActor; metadata: Record<string, unknown> }) {
