@@ -30,6 +30,19 @@ Define the first technical structure for the construction report app.
 - Queue worker for WhatsApp media, transcription, report extraction, and PDF generation.
 - Redis for queues and short-lived processing state if needed.
 
+### Current Deployment
+
+- Hosted prototype target: Fly.io.
+- App name: `relatoriodeobra-app`.
+- Region: `gru`.
+- Runtime: Docker image built from the monorepo.
+- Production entrypoint: Fastify backend on port `8080`.
+- Frontend delivery: backend serves the compiled Vite app from `web/dist`.
+- Persistence: SQLite at `/data/app.sqlite` on a Fly volume named `diario_data`.
+- Public validation URL: `https://relatoriodeobra-app.fly.dev/`.
+- Custom domains requested: `relatoriodeobra.app.br` and `www.relatoriodeobra.app.br`.
+- DNS authority remains at Umbler; certificate validation depends on adding the Fly DNS records there.
+
 ### Current Persistence
 
 Stage 2 uses a local SQLite database at `backend/.data/app.sqlite` by default. This file is ignored by Git.

@@ -285,6 +285,16 @@ Stage 5 starts real authentication and access control:
 - The seed administrator uses `DEFAULT_ADMIN_PASSWORD` when defined, otherwise the local development fallback is `Jonas123`.
 - Remaining security work: password reset, enforced password rotation for fallback credentials, persistent rate limiting, per-project permissions, and deeper route-aware UI states inside each page.
 
+Stage 6 starts hosted prototype deployment:
+
+- The monorepo now has a Fly.io deployment path using `Dockerfile` and `fly.toml`.
+- In production, the Fastify backend serves the compiled Vite frontend from `web/dist`, so the prototype can run behind one HTTPS domain.
+- The first Fly app is `relatoriodeobra-app`, deployed in the `gru` region.
+- SQLite persists on a Fly volume mounted at `/data`, with `DATABASE_PATH=/data/app.sqlite`.
+- The deployed validation URL is `https://relatoriodeobra-app.fly.dev/`.
+- Custom certificates were requested for `relatoriodeobra.app.br` and `www.relatoriodeobra.app.br`.
+- DNS is still pending in Umbler: the domain must point to the Fly IPv4/IPv6 records before certificates verify.
+
 ## Future Scope
 
 - Photo analysis.
