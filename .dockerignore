@@ -1,0 +1,13 @@
+.git
+.gitignore
+node_modules
+backend/node_modules
+web/node_modules
+backend/.data
+web/dist
+backend/dist
+output
+research
+npm-debug.log
+.env
+.env.*
