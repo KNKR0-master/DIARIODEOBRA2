@@ -273,6 +273,18 @@ Stage 4 adds flow refinements before PDF and WhatsApp:
 - Analysis dashboards now prioritize audit and risk indicators: overdue tasks, low-progress tasks, critical/attention occurrences, RDOs waiting for review, and approved immutable RDOs.
 - Authentication is recorded as a required security stage: login, password/session handling, permission enforcement, role-aware navigation, profile actions, and logout must replace the current static user context before production use.
 
+Stage 5 starts real authentication and access control:
+
+- Passwords are stored as Argon2id hashes, never as plain text.
+- Sessions use opaque random tokens stored in HttpOnly cookies; the database stores only a SHA-256 hash of the session token.
+- `/api/auth/login`, `/api/auth/me`, and `/api/auth/logout` define the first authentication contract.
+- Protected `/api/*` routes require an active session, and write actions now use the authenticated user in audit events.
+- Basic role checks are active: administrators manage users; administrators/customized profiles manage settings and obras; administrators/reviewer-approver profiles approve or reject RDOs; client read-only users cannot mutate records.
+- CSRF protection is active for state-changing API requests: the server issues a per-session CSRF token in a readable same-site cookie, stores only its hash, and requires `X-CSRF-Token` on mutating requests.
+- The frontend now sends the CSRF header automatically and filters the top navigation/settings menu according to the authenticated user's access profile.
+- The seed administrator uses `DEFAULT_ADMIN_PASSWORD` when defined, otherwise the local development fallback is `Jonas123`.
+- Remaining security work: password reset, enforced password rotation for fallback credentials, persistent rate limiting, per-project permissions, and deeper route-aware UI states inside each page.
+
 ## Future Scope
 
 - Photo analysis.
@@ -295,4 +307,4 @@ Stage 4 adds flow refinements before PDF and WhatsApp:
 - Signature and trust: resolved. Store virtual signature, user ID, user name, creation date/time, approval date/time, hash/checksum, and approved PDF version.
 - Photos: resolved for MVP. Photos are optional, with admin configuration to make them required by company, project, or template later.
 - PDF generation: resolved. Required after report approval in the MVP.
-- Login/logout: open. The current user chip is static. Add real authentication, session persistence, password policy/recovery, role-aware navigation, and a top-right account menu with logout.
+- Login/logout: partially resolved. The app now has real login, HttpOnly session cookies, logout, password hashing, CSRF protection, and initial role-aware navigation. Password recovery, per-project permissions, persistent rate limiting, and deeper route-aware UI remain open.

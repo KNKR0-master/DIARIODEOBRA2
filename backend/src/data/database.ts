@@ -3,8 +3,9 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
+import { hashSync } from "@node-rs/argon2";
 import { checklists, company, equipment, labor, occurrenceTypes, projectGroups, projects, reports, reportTemplates, signatures, users } from "./seed.js";
-import type { AuditLog, CatalogItem, ChecklistItem, ChecklistTemplate, Company, PdfVersion, Project, Report, ReportAttachment, ReportChecklistResponse, ReportEquipmentEntry, ReportLaborEntry, ReportOccurrenceEntry, ReportSections, ReportStructuredData, ReportTask, ReportTemplate, Signature, User } from "../types.js";
+import type { AuditLog, AuthSession, CatalogItem, ChecklistItem, ChecklistTemplate, Company, PdfVersion, Project, Report, ReportAttachment, ReportChecklistResponse, ReportEquipmentEntry, ReportLaborEntry, ReportOccurrenceEntry, ReportSections, ReportStructuredData, ReportTask, ReportTemplate, Signature, User } from "../types.js";
 
 type CountRow = { count: number };
 
@@ -26,6 +27,18 @@ type UserRow = {
   status: User["status"];
   signature_id: string;
   created_at: string;
+  password_hash: string;
+};
+
+type AuthSessionRow = {
+  id: string;
+  user_id: string;
+  created_at: string;
+  expires_at: string;
+  last_seen_at: string;
+  csrf_token_hash: string;
+  ip_address: string;
+  user_agent: string;
 };
 
 type SignatureRow = {
@@ -266,6 +279,19 @@ function toUser(row: UserRow): User {
     status: row.status,
     signatureId: row.signature_id,
     createdAt: row.created_at
+  };
+}
+
+function toAuthSession(row: AuthSessionRow): AuthSession {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    lastSeenAt: row.last_seen_at,
+    csrfTokenHash: row.csrf_token_hash,
+    ipAddress: row.ip_address,
+    userAgent: row.user_agent
   };
 }
 
@@ -527,6 +553,64 @@ class AppDatabase {
     return row ? toUser(row) : undefined;
   }
 
+  getUserByEmail(email: string) {
+    const row = this.db.prepare("SELECT * FROM users WHERE lower(email) = lower(?)").get(email) as UserRow | undefined;
+    return row ? toUser(row) : undefined;
+  }
+
+  getUserPasswordHash(userId: string) {
+    const row = this.db.prepare("SELECT password_hash FROM users WHERE id = ?").get(userId) as { password_hash: string } | undefined;
+    return row?.password_hash ?? "";
+  }
+
+  createAuthSession(session: AuthSession, actor: AuditActor) {
+    this.db
+      .prepare(
+        `INSERT INTO auth_sessions (
+          id, user_id, created_at, expires_at, last_seen_at, csrf_token_hash, ip_address, user_agent
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(session.id, session.userId, session.createdAt, session.expiresAt, session.lastSeenAt, session.csrfTokenHash, session.ipAddress, session.userAgent);
+
+    this.writeAudit({
+      entityType: "user",
+      entityId: session.userId,
+      eventType: "auth.session.created",
+      actor,
+      metadata: { expiresAt: session.expiresAt, ipAddress: session.ipAddress }
+    });
+
+    return session;
+  }
+
+  getAuthSession(sessionId: string, now = new Date().toISOString()) {
+    const row = this.db.prepare("SELECT * FROM auth_sessions WHERE id = ? AND expires_at > ?").get(sessionId, now) as AuthSessionRow | undefined;
+    return row ? toAuthSession(row) : undefined;
+  }
+
+  touchAuthSession(sessionId: string) {
+    this.db.prepare("UPDATE auth_sessions SET last_seen_at = ? WHERE id = ?").run(new Date().toISOString(), sessionId);
+  }
+
+  updateAuthSessionCsrf(sessionId: string, csrfTokenHash: string) {
+    this.db.prepare("UPDATE auth_sessions SET csrf_token_hash = ?, last_seen_at = ? WHERE id = ?").run(csrfTokenHash, new Date().toISOString(), sessionId);
+  }
+
+  deleteAuthSession(sessionId: string, actor: AuditActor) {
+    const session = this.getAuthSession(sessionId);
+    this.db.prepare("DELETE FROM auth_sessions WHERE id = ?").run(sessionId);
+
+    if (session) {
+      this.writeAudit({
+        entityType: "user",
+        entityId: session.userId,
+        eventType: "auth.session.revoked",
+        actor,
+        metadata: { sessionId }
+      });
+    }
+  }
+
   listProjects() {
     return (this.db.prepare("SELECT * FROM projects ORDER BY name").all() as ProjectRow[]).map(toProject);
   }
@@ -582,14 +666,14 @@ class AppDatabase {
     return this.getProject(project.id);
   }
 
-  createUser(user: User, actor: AuditActor) {
+  createUser(user: User, actor: AuditActor, passwordHash: string) {
     this.db
       .prepare(
         `INSERT INTO users (
-          id, company_id, name, email, job_title, access_profile, status, signature_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          id, company_id, name, email, job_title, access_profile, status, signature_id, created_at, password_hash
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(user.id, user.companyId, user.name, user.email, user.jobTitle, user.accessProfile, user.status, user.signatureId, user.createdAt);
+      .run(user.id, user.companyId, user.name, user.email, user.jobTitle, user.accessProfile, user.status, user.signatureId, user.createdAt, passwordHash);
 
     this.writeAudit({
       entityType: "user",
@@ -624,6 +708,20 @@ class AppDatabase {
     });
 
     return this.getUser(user.id);
+  }
+
+  updateUserPassword(userId: string, passwordHash: string, actor: AuditActor) {
+    const result = this.db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(passwordHash, userId);
+
+    if (result.changes > 0) {
+      this.writeAudit({
+        entityType: "user",
+        entityId: userId,
+        eventType: "user.password.updated",
+        actor,
+        metadata: {}
+      });
+    }
   }
 
   listReportTemplates() {
@@ -1182,8 +1280,22 @@ class AppDatabase {
         access_profile TEXT NOT NULL,
         status TEXT NOT NULL,
         signature_id TEXT NOT NULL,
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+        password_hash TEXT NOT NULL DEFAULT ''
       );
+
+      CREATE TABLE IF NOT EXISTS auth_sessions (
+        id TEXT PRIMARY KEY,
+        user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        last_seen_at TEXT NOT NULL,
+        csrf_token_hash TEXT NOT NULL DEFAULT '',
+        ip_address TEXT NOT NULL DEFAULT '',
+        user_agent TEXT NOT NULL DEFAULT ''
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id, expires_at);
 
       CREATE TABLE IF NOT EXISTS projects (
         id TEXT PRIMARY KEY,
@@ -1383,6 +1495,8 @@ class AppDatabase {
     this.ensureColumn("report_tasks", "start_date", "ALTER TABLE report_tasks ADD COLUMN start_date TEXT NOT NULL DEFAULT ''");
     this.ensureColumn("report_tasks", "percent_complete", "ALTER TABLE report_tasks ADD COLUMN percent_complete REAL NOT NULL DEFAULT 0");
     this.ensureColumn("report_attachments", "task_id", "ALTER TABLE report_attachments ADD COLUMN task_id TEXT REFERENCES report_tasks(id) ON DELETE SET NULL");
+    this.ensureColumn("users", "password_hash", "ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("auth_sessions", "csrf_token_hash", "ALTER TABLE auth_sessions ADD COLUMN csrf_token_hash TEXT NOT NULL DEFAULT ''");
   }
 
   private ensureColumn(tableName: string, columnName: string, statement: string) {
@@ -1404,13 +1518,23 @@ class AppDatabase {
     }
 
     for (const user of users) {
+      const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD ?? "Jonas123";
+      const passwordHash = hashSync(defaultPassword);
       this.db
         .prepare(
           `INSERT OR IGNORE INTO users (
-            id, company_id, name, email, job_title, access_profile, status, signature_id, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            id, company_id, name, email, job_title, access_profile, status, signature_id, created_at, password_hash
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(user.id, user.companyId, user.name, user.email, user.jobTitle, user.accessProfile, user.status, user.signatureId, user.createdAt);
+        .run(user.id, user.companyId, user.name, user.email, user.jobTitle, user.accessProfile, user.status, user.signatureId, user.createdAt, passwordHash);
+
+      const currentHash = this.getUserPasswordHash(user.id);
+      if (!currentHash) {
+        this.updateUserPassword(user.id, passwordHash, {
+          actorUserId: user.id,
+          actorName: user.name
+        });
+      }
     }
 
     for (const project of projects) {

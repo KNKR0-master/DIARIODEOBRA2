@@ -2,12 +2,8 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import { database } from "../data/database.js";
+import { authenticateRequest, clearFailedLogins, clearSessionCookie, createCsrfToken, createSessionForUser, getAuthActor, getFailedLoginState, hashPassword, hashSessionToken, recordFailedLogin, requireProfiles, requireWriteAccess, setCsrfCookie, setSessionCookie, validatePasswordPolicy, verifyCsrfToken, verifyPassword } from "./auth.js";
 import type { AuditLog, CatalogItem, ChecklistTemplate, ContractType, PdfVersion, Project, ProjectStatus, Report, ReportAttachment, ReportChecklistResponse, ReportEquipmentEntry, ReportLaborEntry, ReportOccurrenceEntry, ReportSections, ReportStructuredData, ReportTask, ReportTemplate, User } from "../types.js";
-
-const defaultActor = {
-  actorUserId: "user-joao",
-  actorName: "JOAO VICTOR"
-};
 
 type StructuredDataInput = {
   laborEntries?: Array<Omit<ReportLaborEntry, "id" | "reportId"> & { id?: string }>;
@@ -39,7 +35,13 @@ const userSchema = z.object({
   email: z.string().email(),
   jobTitle: z.string().optional().default(""),
   accessProfile: z.enum(["administrator", "customized", "field_user", "reviewer_approver", "client_read_only"]).default("field_user"),
-  status: z.enum(["active", "inactive"]).default("active")
+  status: z.enum(["active", "inactive"]).default("active"),
+  password: z.string().optional()
+});
+
+const loginSchema = z.object({
+  email: z.string().email(),
+  password: z.string().min(1)
 });
 
 const reportTemplateSchema = z.object({
@@ -274,6 +276,23 @@ const normalizeStructuredData = (reportId: string, structuredData?: StructuredDa
 });
 
 export async function registerRoutes(app: FastifyInstance) {
+  app.addHook("preHandler", async (request, reply) => {
+    const path = request.url.split("?")[0];
+    const isPublic = path === "/health" || path === "/api/auth/login";
+    const isLogout = path === "/api/auth/logout";
+
+    if (isPublic || !path.startsWith("/api")) {
+      return;
+    }
+
+    const authResult = await authenticateRequest(request, reply);
+    if (authResult) return authResult;
+
+    if (isLogout) return;
+
+    return verifyCsrfToken(request, reply);
+  });
+
   app.get("/health", async () => {
     const company = database.getCompany();
 
@@ -285,6 +304,57 @@ export async function registerRoutes(app: FastifyInstance) {
     };
   });
 
+  app.post("/api/auth/login", async (request, reply) => {
+    const parsedBody = loginSchema.safeParse(request.body);
+
+    if (!parsedBody.success) {
+      return reply.code(400).send({ error: "Invalid login payload" });
+    }
+
+    const payload = parsedBody.data;
+    const throttleKey = `${request.ip}:${payload.email.toLowerCase()}`;
+
+    if (getFailedLoginState(throttleKey).locked) {
+      return reply.code(429).send({ error: "Too many login attempts. Try again later." });
+    }
+
+    const user = database.getUserByEmail(payload.email);
+    const passwordHash = user ? database.getUserPasswordHash(user.id) : "";
+    const validPassword = user ? await verifyPassword(passwordHash, payload.password) : false;
+
+    if (!user || user.status !== "active" || !validPassword) {
+      recordFailedLogin(throttleKey);
+      return reply.code(401).send({ error: "Invalid e-mail or password" });
+    }
+
+    clearFailedLogins(throttleKey);
+    const { token, csrfToken } = createSessionForUser(user, request);
+    setSessionCookie(reply, token, csrfToken);
+
+    return { user, csrfToken };
+  });
+
+  app.get("/api/auth/me", async (request, reply) => {
+    const csrfToken = createCsrfToken();
+    if (request.auth?.session) {
+      database.updateAuthSessionCsrf(request.auth.session.id, hashSessionToken(csrfToken));
+      setCsrfCookie(reply, csrfToken);
+    }
+
+    return { user: request.auth?.user, csrfToken };
+  });
+
+  app.post("/api/auth/logout", async (request, reply) => {
+    const token = request.cookies?.diario_session;
+
+    if (token) {
+      database.deleteAuthSession(hashSessionToken(token), getAuthActor(request));
+    }
+
+    clearSessionCookie(reply);
+    return { ok: true };
+  });
+
   app.get("/api/bootstrap", async () => ({
     company: database.getCompany(),
     counts: database.getCounts()
@@ -293,6 +363,9 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get("/api/users", async () => ({ users: database.listUsers() }));
 
   app.post("/api/users", async (request, reply) => {
+    const denied = requireProfiles(request, reply, ["administrator"]);
+    if (denied) return denied;
+
     const parsedBody = userSchema.safeParse(request.body);
 
     if (!parsedBody.success) {
@@ -300,6 +373,12 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const payload = parsedBody.data;
+    const password = payload.password ?? "";
+
+    if (!validatePasswordPolicy(password)) {
+      return reply.code(400).send({ error: "Password must have 8-128 characters and include letters and numbers" });
+    }
+
     const user: User = {
       id: `user-${randomUUID()}`,
       companyId: database.getCompany().id,
@@ -311,11 +390,15 @@ export async function registerRoutes(app: FastifyInstance) {
       signatureId: `sig-user-${randomUUID().slice(0, 8)}-virtual`,
       createdAt: nowIso()
     };
+    const passwordHash = await hashPassword(password);
 
-    return reply.code(201).send({ user: database.createUser(user, defaultActor) });
+    return reply.code(201).send({ user: database.createUser(user, getAuthActor(request), passwordHash) });
   });
 
   app.patch("/api/users/:id", async (request, reply) => {
+    const denied = requireProfiles(request, reply, ["administrator"]);
+    if (denied) return denied;
+
     const { id } = request.params as { id: string };
     const existingUser = database.getUser(id);
 
@@ -339,9 +422,17 @@ export async function registerRoutes(app: FastifyInstance) {
       status: payload.status
     };
 
-    const updatedUser = database.updateUser(user, defaultActor);
+    const updatedUser = database.updateUser(user, getAuthActor(request));
     if (!updatedUser) {
       return reply.code(404).send({ error: "User not found" });
+    }
+
+    if (payload.password) {
+      if (!validatePasswordPolicy(payload.password)) {
+        return reply.code(400).send({ error: "Password must have 8-128 characters and include letters and numbers" });
+      }
+
+      database.updateUserPassword(updatedUser.id, await hashPassword(payload.password), getAuthActor(request));
     }
 
     return { user: updatedUser };
@@ -350,6 +441,9 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get("/api/projects", async () => ({ projects: database.listProjects() }));
 
   app.post("/api/projects", async (request, reply) => {
+    const denied = requireProfiles(request, reply, ["administrator", "customized"]);
+    if (denied) return denied;
+
     const parsedBody = createProjectSchema.safeParse(request.body);
 
     if (!parsedBody.success) {
@@ -374,10 +468,13 @@ export async function registerRoutes(app: FastifyInstance) {
       requirePhotos: payload.requirePhotos
     };
 
-    return reply.code(201).send({ project: database.createProject(project, defaultActor) });
+    return reply.code(201).send({ project: database.createProject(project, getAuthActor(request)) });
   });
 
   app.patch("/api/projects/:id", async (request, reply) => {
+    const denied = requireProfiles(request, reply, ["administrator", "customized"]);
+    if (denied) return denied;
+
     const { id } = request.params as { id: string };
     const existingProject = database.getProject(id);
 
@@ -408,7 +505,7 @@ export async function registerRoutes(app: FastifyInstance) {
       requirePhotos: payload.requirePhotos
     };
 
-    const updatedProject = database.updateProject(project, defaultActor);
+    const updatedProject = database.updateProject(project, getAuthActor(request));
     if (!updatedProject) {
       return reply.code(404).send({ error: "Project not found" });
     }
@@ -459,6 +556,9 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/reports/:id/attachments", async (request, reply) => {
+    const denied = requireWriteAccess(request, reply);
+    if (denied) return denied;
+
     const { id } = request.params as { id: string };
     const report = database.getReport(id);
 
@@ -485,14 +585,17 @@ export async function registerRoutes(app: FastifyInstance) {
       dataUrl: payload.dataUrl,
       caption: payload.caption,
       createdAt: new Date().toISOString(),
-      createdByUserId: defaultActor.actorUserId,
-      createdByName: defaultActor.actorName
+      createdByUserId: request.auth?.user.id ?? "system",
+      createdByName: request.auth?.user.name ?? "System"
     };
 
-    return reply.code(201).send({ attachment: database.createReportAttachment(attachment, defaultActor) });
+    return reply.code(201).send({ attachment: database.createReportAttachment(attachment, getAuthActor(request)) });
   });
 
   app.post("/api/reports", async (request, reply) => {
+    const denied = requireWriteAccess(request, reply);
+    if (denied) return denied;
+
     const parsedBody = createReportSchema.safeParse(request.body);
 
     if (!parsedBody.success) {
@@ -511,7 +614,7 @@ export async function registerRoutes(app: FastifyInstance) {
       return reply.code(404).send({ error: "Report template not found" });
     }
 
-    const currentUser = database.getUser(defaultActor.actorUserId);
+    const currentUser = request.auth?.user;
     const lastReport = database.getLastReport(payload.projectId);
     const number = database.nextReportNumber();
     const reportId = `report-${number}-${randomUUID()}`;
@@ -522,14 +625,14 @@ export async function registerRoutes(app: FastifyInstance) {
       templateId: payload.templateId,
       reportDate: payload.reportDate,
       status: "draft",
-      creatorUserId: currentUser?.id ?? defaultActor.actorUserId,
-      creatorName: currentUser?.name ?? defaultActor.actorName,
+      creatorUserId: currentUser?.id ?? "system",
+      creatorName: currentUser?.name ?? "System",
       createdAt: nowIso(),
       sections: payload.copyFromLast && lastReport ? { ...lastReport.sections } : emptySections(),
       structuredData: payload.copyFromLast && lastReport ? normalizeStructuredData(reportId, lastReport.structuredData) : emptyStructuredData()
     };
 
-    return reply.code(201).send({ report: database.createReport(report, defaultActor) });
+    return reply.code(201).send({ report: database.createReport(report, getAuthActor(request)) });
   });
 
   app.get("/api/reports/:id", async (request, reply) => {
@@ -544,6 +647,9 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   app.patch("/api/reports/:id", async (request, reply) => {
+    const denied = requireWriteAccess(request, reply);
+    if (denied) return denied;
+
     const { id } = request.params as { id: string };
     const report = database.getReport(id);
 
@@ -575,10 +681,13 @@ export async function registerRoutes(app: FastifyInstance) {
       structuredData: parsedBody.data.structuredData ? normalizeStructuredData(report.id, parsedBody.data.structuredData) : report.structuredData
     };
 
-    return { report: database.updateReportSections(updatedReport, defaultActor, changedFields) };
+    return { report: database.updateReportSections(updatedReport, getAuthActor(request), changedFields) };
   });
 
   app.post("/api/reports/:id/submit-review", async (request, reply) => {
+    const denied = requireWriteAccess(request, reply);
+    if (denied) return denied;
+
     const { id } = request.params as { id: string };
     const report = database.getReport(id);
 
@@ -600,10 +709,13 @@ export async function registerRoutes(app: FastifyInstance) {
       submittedAt: nowIso()
     };
 
-    return { report: database.submitReport(updatedReport, defaultActor) };
+    return { report: database.submitReport(updatedReport, getAuthActor(request)) };
   });
 
   app.post("/api/reports/:id/approve", async (request, reply) => {
+    const denied = requireProfiles(request, reply, ["administrator", "reviewer_approver"]);
+    if (denied) return denied;
+
     const { id } = request.params as { id: string };
     const report = database.getReport(id);
 
@@ -625,7 +737,7 @@ export async function registerRoutes(app: FastifyInstance) {
       return reply.code(400).send({ error: "Invalid approval payload", details: parsedBody.error.flatten() });
     }
 
-    const approver = database.getUser(parsedBody.data.approverUserId);
+    const approver = request.auth?.user ?? database.getUser(parsedBody.data.approverUserId);
     const approvedAt = nowIso();
     const versionNumber = database.nextPdfVersionNumber(report.id);
     const pdfVersionId = `pdf-${report.id}-v${versionNumber}`;
@@ -656,13 +768,16 @@ export async function registerRoutes(app: FastifyInstance) {
 
     return {
       report: database.approveReport(approvedReport, pdfVersion, {
-        actorUserId: approvedReport.approverUserId ?? defaultActor.actorUserId,
-        actorName: approvedReport.approverName ?? defaultActor.actorName
+        actorUserId: approvedReport.approverUserId ?? "system",
+        actorName: approvedReport.approverName ?? "System"
       })
     };
   });
 
   app.post("/api/reports/:id/reject", async (request, reply) => {
+    const denied = requireProfiles(request, reply, ["administrator", "reviewer_approver"]);
+    if (denied) return denied;
+
     const { id } = request.params as { id: string };
     const report = database.getReport(id);
 
@@ -689,7 +804,7 @@ export async function registerRoutes(app: FastifyInstance) {
       }
     };
 
-    return { report: database.rejectReport(updatedReport, defaultActor, parsedBody.data.reason) };
+    return { report: database.rejectReport(updatedReport, getAuthActor(request), parsedBody.data.reason) };
   });
 
   app.get("/api/reports/:id/audit", async (request, reply) => {
@@ -728,6 +843,9 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get("/api/report-templates", async () => ({ reportTemplates: database.listReportTemplates() }));
 
   app.post("/api/report-templates", async (request, reply) => {
+    const denied = requireProfiles(request, reply, ["administrator", "customized"]);
+    if (denied) return denied;
+
     const parsedBody = reportTemplateSchema.safeParse(request.body);
 
     if (!parsedBody.success) {
@@ -745,10 +863,13 @@ export async function registerRoutes(app: FastifyInstance) {
       signaturePdfDisplay: payload.signaturePdfDisplay
     };
 
-    return reply.code(201).send({ reportTemplate: database.createReportTemplate(reportTemplate, defaultActor) });
+    return reply.code(201).send({ reportTemplate: database.createReportTemplate(reportTemplate, getAuthActor(request)) });
   });
 
   app.patch("/api/report-templates/:id", async (request, reply) => {
+    const denied = requireProfiles(request, reply, ["administrator", "customized"]);
+    if (denied) return denied;
+
     const { id } = request.params as { id: string };
     const existingTemplate = database.getReportTemplate(id);
 
@@ -773,7 +894,7 @@ export async function registerRoutes(app: FastifyInstance) {
       signaturePdfDisplay: payload.signaturePdfDisplay
     };
 
-    const updatedTemplate = database.updateReportTemplate(reportTemplate, defaultActor);
+    const updatedTemplate = database.updateReportTemplate(reportTemplate, getAuthActor(request));
     if (!updatedTemplate) {
       return reply.code(404).send({ error: "Report template not found" });
     }
@@ -792,6 +913,9 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get("/api/catalogs/checklists", async () => ({ checklists: database.listChecklists() }));
 
   app.post("/api/catalogs/items/:kind", async (request, reply) => {
+    const denied = requireProfiles(request, reply, ["administrator", "customized"]);
+    if (denied) return denied;
+
     const { kind } = request.params as { kind: string };
     const catalogKind = getCatalogKind(kind);
 
@@ -814,10 +938,13 @@ export async function registerRoutes(app: FastifyInstance) {
       sourceType: payload.sourceType
     };
 
-    return reply.code(201).send({ item: database.createCatalogItem(catalogKind, item, defaultActor) });
+    return reply.code(201).send({ item: database.createCatalogItem(catalogKind, item, getAuthActor(request)) });
   });
 
   app.patch("/api/catalogs/items/:kind/:id", async (request, reply) => {
+    const denied = requireProfiles(request, reply, ["administrator", "customized"]);
+    if (denied) return denied;
+
     const { kind, id } = request.params as { kind: string; id: string };
     const catalogKind = getCatalogKind(kind);
 
@@ -846,7 +973,7 @@ export async function registerRoutes(app: FastifyInstance) {
       sourceType: payload.sourceType
     };
 
-    const updatedItem = database.updateCatalogItem(catalogKind, item, defaultActor);
+    const updatedItem = database.updateCatalogItem(catalogKind, item, getAuthActor(request));
     if (!updatedItem) {
       return reply.code(404).send({ error: "Catalog item not found" });
     }
@@ -855,6 +982,9 @@ export async function registerRoutes(app: FastifyInstance) {
   });
 
   app.post("/api/catalogs/checklists", async (request, reply) => {
+    const denied = requireProfiles(request, reply, ["administrator", "customized"]);
+    if (denied) return denied;
+
     const parsedBody = checklistSchema.safeParse(request.body);
 
     if (!parsedBody.success) {
@@ -877,10 +1007,13 @@ export async function registerRoutes(app: FastifyInstance) {
       }))
     };
 
-    return reply.code(201).send({ checklist: database.createChecklist(checklist, defaultActor) });
+    return reply.code(201).send({ checklist: database.createChecklist(checklist, getAuthActor(request)) });
   });
 
   app.patch("/api/catalogs/checklists/:id", async (request, reply) => {
+    const denied = requireProfiles(request, reply, ["administrator", "customized"]);
+    if (denied) return denied;
+
     const { id } = request.params as { id: string };
     const existingChecklist = database.getChecklist(id);
 
@@ -910,7 +1043,7 @@ export async function registerRoutes(app: FastifyInstance) {
       }))
     };
 
-    const updatedChecklist = database.updateChecklist(checklist, defaultActor);
+    const updatedChecklist = database.updateChecklist(checklist, getAuthActor(request));
     if (!updatedChecklist) {
       return reply.code(404).send({ error: "Checklist not found" });
     }

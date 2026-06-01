@@ -33,7 +33,7 @@ import {
   X
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { api } from "./api";
+import { ApiError, api } from "./api";
 import type {
   AccessProfile,
   AuditLog,
@@ -173,14 +173,32 @@ function App() {
   const [modal, setModal] = useState<ModalState>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
 
   useEffect(() => {
-    void loadInitialData();
+    void bootstrapSession();
   }, []);
 
-  async function loadInitialData() {
+  async function bootstrapSession() {
     try {
       setLoading(true);
+      const authResponse = await api.getCurrentUser();
+      setCurrentUser(authResponse.user);
+      await loadInitialData();
+    } catch (loadError) {
+      if (loadError instanceof ApiError && loadError.status === 401) {
+        setCurrentUser(null);
+        setError("");
+        return;
+      }
+
+      setError(loadError instanceof Error ? loadError.message : "NÃ£o foi possÃ­vel carregar a API.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function loadInitialData() {
       const [projectsResponse, reportsResponse, templatesResponse, usersResponse, laborResponse, equipmentResponse, occurrenceResponse, projectGroupsResponse, checklistResponse] = await Promise.all([
         api.getProjects(),
         api.getReports(),
@@ -205,11 +223,6 @@ function App() {
       setSelectedProjectId((current) => current || projectsResponse.projects[0]?.id || "");
       setSelectedReportId((current) => current || reportsResponse.reports[0]?.id || "");
       setError("");
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Não foi possível carregar a API.");
-    } finally {
-      setLoading(false);
-    }
   }
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? projects[0];
@@ -285,6 +298,28 @@ function App() {
     setChecklists((current) => [response.checklist, ...current.filter((entry) => entry.id !== response.checklist.id)].sort((a, b) => a.name.localeCompare(b.name)));
   }
 
+  async function handleLogin(email: string, password: string) {
+    setLoading(true);
+    try {
+      const response = await api.login({ email, password });
+      setCurrentUser(response.user);
+      await loadInitialData();
+      setError("");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleLogout() {
+    await api.logout();
+    setCurrentUser(null);
+    setPage("projects");
+    setModal(null);
+    setProjects([]);
+    setReports([]);
+    setUsers([]);
+  }
+
   const openProject = (projectId: string) => {
     setSelectedProjectId(projectId);
     setSelectedReportId(reports.find((report) => report.projectId === projectId)?.id ?? "");
@@ -344,9 +379,13 @@ function App() {
     setModal({ type: "project-create" });
   };
 
+  if (!currentUser) {
+    return <LoginPage loading={loading} onLogin={handleLogin} />;
+  }
+
   return (
     <div className="app-shell">
-      <TopNav activePage={page} onNavigate={setPage} onCreate={handleCreateButton} />
+      <TopNav activePage={page} user={currentUser} onNavigate={setPage} onCreate={handleCreateButton} onLogout={() => void handleLogout()} />
       <main className="app-main">
         {error && <div className="error-banner">{error}</div>}
         {loading ? (
@@ -356,6 +395,7 @@ function App() {
         ) : isSettings ? (
           <SettingsLayout
             activePage={page}
+            user={currentUser}
             onNavigate={setPage}
             users={users}
             templates={templates}
@@ -430,7 +470,48 @@ function App() {
   );
 }
 
-function TopNav({ activePage, onNavigate, onCreate }: { activePage: Page; onNavigate: (page: Page) => void; onCreate: () => void }) {
+function LoginPage({ loading, onLogin }: { loading: boolean; onLogin: (email: string, password: string) => Promise<void> }) {
+  const [email, setEmail] = useState("joaovictor.castro@tthome.com.br");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      setError("");
+      await onLogin(email, password);
+    } catch (loginError) {
+      setError(loginError instanceof Error ? loginError.message : "Não foi possível entrar.");
+    }
+  }
+
+  return (
+    <main className="login-screen">
+      <form className="login-panel" onSubmit={(event) => void submit(event)}>
+        <div>
+          <span className="login-brand">TT HOME LTDA</span>
+          <h1>Entrar no Diário de Obra</h1>
+        </div>
+        <label>E-mail<input type="email" autoComplete="username" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
+        <label>Senha<input type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} /></label>
+        {error && <div className="error-banner compact">{error}</div>}
+        <button className="save-button" type="submit" disabled={loading}>{loading ? "Entrando..." : "Entrar"}</button>
+        <p className="muted-text">Sessão protegida por cookie HttpOnly. Usuário inicial: administrador sem reset de senha nesta etapa.</p>
+      </form>
+    </main>
+  );
+}
+
+function TopNav({ activePage, user, onNavigate, onCreate, onLogout }: { activePage: Page; user: AppUser; onNavigate: (page: Page) => void; onCreate: () => void; onLogout: () => void }) {
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const visibleSettingsItems = settingsItems.filter((item) => canAccessSettingsPage(user.accessProfile, item.page));
+  const canCreate = canCreateOnPage(user.accessProfile, activePage);
+  const closeUserMenu = () => setIsUserMenuOpen(false);
+
+  useEffect(() => {
+    closeUserMenu();
+  }, [activePage]);
+
   return (
     <header className="top-nav">
       <div className="brand">TT HOME LTDA</div>
@@ -462,7 +543,7 @@ function TopNav({ activePage, onNavigate, onCreate }: { activePage: Page; onNavi
             Cadastros
           </button>
           <div className="nav-dropdown-menu">
-            {settingsItems.map((item) => <button key={item.page} onClick={() => onNavigate(item.page)}><item.icon size={16} />{item.label}</button>)}
+            {visibleSettingsItems.map((item) => <button key={item.page} onClick={() => onNavigate(item.page)}><item.icon size={16} />{item.label}</button>)}
           </div>
         </div>
         <button className={activePage === "chat" ? "nav-item active" : "nav-item"} onClick={() => onNavigate("chat")}>
@@ -472,22 +553,22 @@ function TopNav({ activePage, onNavigate, onCreate }: { activePage: Page; onNavi
       </nav>
       <div className="top-actions">
         <button className="language">PT-BR</button>
-        <button className="create-button" onClick={onCreate}>
+        {canCreate && <button className="create-button" onClick={onCreate}>
           <Plus size={17} />
           ADICIONAR
-        </button>
-        <div className="user-menu">
-          <button className="user-chip" type="button" aria-haspopup="true">
-            <span>JO</span>
+        </button>}
+        <div className={`user-menu ${isUserMenuOpen ? "open" : ""}`}>
+          <button className="user-chip" type="button" aria-haspopup="menu" aria-expanded={isUserMenuOpen} onClick={() => setIsUserMenuOpen((value) => !value)}>
+            <span>{initials(user.name)}</span>
             <div>
-              <strong>JOAO VICTOR</strong>
-              <small>Administrador</small>
+              <strong>{user.name}</strong>
+              <small>{accessProfileLabel(user.accessProfile)}</small>
             </div>
           </button>
-          <div className="user-menu-dropdown">
-            <button type="button" onClick={() => onNavigate("settings-profile")}><User size={15} />Meu perfil</button>
-            <button type="button" onClick={() => onNavigate("settings-users")}><Users size={15} />Usuarios e acessos</button>
-            <button type="button" disabled title="Login, sessao e logout real entram na etapa de autenticacao."><LogOut size={15} />Sair</button>
+          <div className="user-menu-dropdown" role="menu">
+            <button type="button" role="menuitem" onClick={() => { closeUserMenu(); onNavigate("settings-profile"); }}><User size={15} />Meu perfil</button>
+            <button type="button" role="menuitem" onClick={() => { closeUserMenu(); onNavigate("settings-users"); }}><Users size={15} />Usuarios e acessos</button>
+            <button type="button" role="menuitem" onClick={() => { closeUserMenu(); onLogout(); }}><LogOut size={15} />Sair</button>
           </div>
         </div>
       </div>
@@ -1138,14 +1219,18 @@ function StructuredRows({ rows, locked, onRemove }: { rows: Array<{ id: string; 
   return <div className="structured-row-list">{rows.map((row) => <div className="structured-row" key={row.id}><strong>{row.main}</strong><span>{row.meta}</span>{!locked && <button type="button" onClick={() => onRemove(row.id)}><X size={15} /></button>}</div>)}</div>;
 }
 
-function SettingsLayout({ activePage, onNavigate, users, templates, labor, equipment, occurrences, projectGroups, checklists, projects, onOpenModal, onToggleCatalog }: { activePage: Page; onNavigate: (page: Page) => void; users: AppUser[]; templates: ReportTemplate[]; labor: CatalogItem[]; equipment: CatalogItem[]; occurrences: CatalogItem[]; projectGroups: CatalogItem[]; checklists: ChecklistTemplate[]; projects: Project[]; onOpenModal: (modal: ModalState) => void; onToggleCatalog: (kind: CatalogKind, item: CatalogItem, active: boolean) => Promise<void> }) {
+function SettingsLayout({ activePage, user, onNavigate, users, templates, labor, equipment, occurrences, projectGroups, checklists, projects, onOpenModal, onToggleCatalog }: { activePage: Page; user: AppUser; onNavigate: (page: Page) => void; users: AppUser[]; templates: ReportTemplate[]; labor: CatalogItem[]; equipment: CatalogItem[]; occurrences: CatalogItem[]; projectGroups: CatalogItem[]; checklists: ChecklistTemplate[]; projects: Project[]; onOpenModal: (modal: ModalState) => void; onToggleCatalog: (kind: CatalogKind, item: CatalogItem, active: boolean) => Promise<void> }) {
+  const allowedSettingsItems = settingsItems.filter((item) => canAccessSettingsPage(user.accessProfile, item.page));
+  if (!canAccessSettingsPage(user.accessProfile, activePage)) {
+    return <section className="page wide"><section className="panel"><h1>Acesso negado</h1><p className="muted-text">Seu perfil não permite acessar este cadastro.</p></section></section>;
+  }
   return (
     <div className="settings-layout">
       <aside className="settings-sidebar">
         <span className="sidebar-title">Configurações</span>
-        {settingsItems.slice(0, 3).map((item) => <SettingsButton key={item.page} item={item} activePage={activePage} onNavigate={onNavigate} count={item.page === "settings-users" ? users.length : undefined} />)}
+        {allowedSettingsItems.slice(0, 3).map((item) => <SettingsButton key={item.page} item={item} activePage={activePage} onNavigate={onNavigate} count={item.page === "settings-users" ? users.length : undefined} />)}
         <span className="sidebar-title">Pré-cadastro</span>
-        {settingsItems.slice(3, 9).map((item) => (
+        {allowedSettingsItems.slice(3, 9).map((item) => (
           <SettingsButton
             key={item.page}
             item={item}
@@ -1155,7 +1240,7 @@ function SettingsLayout({ activePage, onNavigate, users, templates, labor, equip
           />
         ))}
         <span className="sidebar-title">Editar obra</span>
-        {settingsItems.slice(9).map((item) => <SettingsButton key={item.page} item={item} activePage={activePage} onNavigate={onNavigate} />)}
+        {allowedSettingsItems.slice(9).map((item) => <SettingsButton key={item.page} item={item} activePage={activePage} onNavigate={onNavigate} />)}
       </aside>
       <section className="settings-content">
         {activePage === "settings-users" ? (
@@ -1329,11 +1414,12 @@ function AddReportModal({ projects, templates, defaultProjectId, onClose, onSave
 }
 
 function UserModal({ user, onClose, onSave }: { user?: AppUser; onClose: () => void; onSave: (payload: UserPayload) => Promise<void> }) {
-  const [form, setForm] = useState<UserPayload>({ name: user?.name ?? "", email: user?.email ?? "", jobTitle: user?.jobTitle ?? "", accessProfile: user?.accessProfile ?? "field_user", status: user?.status ?? "active" });
+  const [form, setForm] = useState<UserPayload>({ name: user?.name ?? "", email: user?.email ?? "", jobTitle: user?.jobTitle ?? "", accessProfile: user?.accessProfile ?? "field_user", status: user?.status ?? "active", password: "" });
   return (
     <SimpleFormModal title={user ? "Editar usuário" : "Adicionar usuário"} onClose={onClose} onSave={() => onSave(form)}>
       <Field label="Nome *" value={form.name} onChange={(value) => setForm((current) => ({ ...current, name: value }))} />
       <Field label="E-mail de acesso *" value={form.email} onChange={(value) => setForm((current) => ({ ...current, email: value }))} type="email" />
+      <Field label={user ? "Nova senha" : "Senha inicial *"} value={form.password ?? ""} onChange={(value) => setForm((current) => ({ ...current, password: value }))} type="password" placeholder={user ? "Preencha apenas para trocar" : "Minimo 8 caracteres com letras e numeros"} />
       <Field label="Cargo" value={form.jobTitle} onChange={(value) => setForm((current) => ({ ...current, jobTitle: value }))} />
       <SelectField label="Perfil de acesso" value={form.accessProfile} onChange={(value) => setForm((current) => ({ ...current, accessProfile: value as AccessProfile }))} options={[["administrator", "Administrador"], ["customized", "Customizado"], ["field_user", "Campo"], ["reviewer_approver", "Revisor/Aprovador"], ["client_read_only", "Cliente leitura"]]} />
       <SelectField label="Status" value={form.status} onChange={(value) => setForm((current) => ({ ...current, status: value as "active" | "inactive" }))} options={[["active", "Ativo"], ["inactive", "Inativo"]]} />
@@ -1862,6 +1948,22 @@ function reportStatusClass(status: Report["status"]) {
 function accessProfileLabel(profile: AccessProfile) {
   const labels: Record<AccessProfile, string> = { administrator: "Administrador", customized: "Customizado", field_user: "Campo", reviewer_approver: "Revisor/Aprovador", client_read_only: "Cliente leitura" };
   return labels[profile];
+}
+
+function canAccessSettingsPage(profile: AccessProfile, page: Page) {
+  if (!page.startsWith("settings")) return true;
+  if (page === "settings-profile") return true;
+  if (profile === "administrator") return true;
+  if (profile === "customized") return page !== "settings-users";
+  return false;
+}
+
+function canCreateOnPage(profile: AccessProfile, page: Page) {
+  if (profile === "client_read_only") return false;
+  if (page === "settings-users") return profile === "administrator";
+  if (page.startsWith("settings")) return profile === "administrator" || profile === "customized";
+  if (page === "overview" || page === "projects") return profile === "administrator" || profile === "customized";
+  return true;
 }
 
 function catalogKindLabel(kind: CatalogKind) {

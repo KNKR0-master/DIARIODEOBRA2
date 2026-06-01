@@ -24,6 +24,17 @@ export interface User {
   createdAt: string;
 }
 
+export interface AuthSession {
+  id: string;
+  userId: string;
+  createdAt: string;
+  expiresAt: string;
+  lastSeenAt: string;
+  csrfTokenHash: string;
+  ipAddress: string;
+  userAgent: string;
+}
+
 export interface Signature {
   id: string;
   userId: string;

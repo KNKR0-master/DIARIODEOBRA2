@@ -52,6 +52,42 @@ textarea {
   background: #dedede;
 }
 
+.login-screen {
+  align-items: center;
+  background: #dedede;
+  display: flex;
+  min-height: 100vh;
+  justify-content: center;
+  padding: 24px;
+}
+
+.login-panel {
+  background: #fff;
+  border: 1px solid #cfd3da;
+  border-radius: 4px;
+  display: grid;
+  gap: 16px;
+  max-width: 420px;
+  padding: 28px;
+  width: 100%;
+}
+
+.login-panel h1 {
+  font-size: 22px;
+  margin: 6px 0 0;
+}
+
+.login-panel label {
+  display: grid;
+  font-weight: 600;
+  gap: 6px;
+}
+
+.login-brand {
+  color: var(--orange);
+  font-weight: 700;
+}
+
 .top-nav {
   align-items: center;
   background: var(--nav);
@@ -236,6 +272,7 @@ textarea {
   z-index: 30;
 }
 
+.user-menu.open .user-menu-dropdown,
 .user-menu:focus-within .user-menu-dropdown,
 .user-menu:hover .user-menu-dropdown {
   display: grid;

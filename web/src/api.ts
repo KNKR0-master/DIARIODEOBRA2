@@ -217,6 +217,7 @@ export interface UserPayload {
   jobTitle: string;
   accessProfile: AccessProfile;
   status: "active" | "inactive";
+  password?: string;
 }
 
 export interface ReportTemplatePayload {
@@ -263,25 +264,75 @@ export interface AttachmentPayload {
   caption: string;
 }
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+let csrfToken = "";
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = init?.method?.toUpperCase() ?? "GET";
+  const requestCsrfToken = method === "GET" || method === "HEAD" || method === "OPTIONS" ? "" : csrfToken || readCookie("diario_csrf");
   const response = await fetch(`${API_URL}${path}`, {
+    credentials: "include",
     headers: {
       "Content-Type": "application/json",
+      ...(requestCsrfToken ? { "X-CSRF-Token": requestCsrfToken } : {}),
       ...init?.headers
     },
     ...init
   });
 
-  const body = (await response.json()) as T & { error?: string };
+  const body = (await response.json()) as T & { error?: string; csrfToken?: string };
+
+  if (body.csrfToken) {
+    csrfToken = body.csrfToken;
+  }
 
   if (!response.ok) {
-    throw new Error(body.error ?? "Erro inesperado na API");
+    throw new ApiError(body.error ?? "Erro inesperado na API", response.status);
   }
 
   return body;
 }
 
+function readCookie(name: string) {
+  if (typeof document === "undefined") return "";
+  const prefix = `${name}=`;
+  return document.cookie
+    .split(";")
+    .map((entry) => entry.trim())
+    .find((entry) => entry.startsWith(prefix))
+    ?.slice(prefix.length) ?? "";
+}
+
 export const api = {
+  async login(payload: { email: string; password: string }) {
+    return request<{ user: User }>("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async getCurrentUser() {
+    return request<{ user: User }>("/api/auth/me");
+  },
+
+  async logout() {
+    const response = await request<{ ok: true }>("/api/auth/logout", {
+      method: "POST",
+      body: JSON.stringify({})
+    });
+    csrfToken = "";
+    return response;
+  },
+
   async getProjects() {
     return request<{ projects: Project[] }>("/api/projects");
   },
