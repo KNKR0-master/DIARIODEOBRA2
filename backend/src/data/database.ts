@@ -3,8 +3,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { checklists, company, equipment, labor, occurrenceTypes, projects, reports, reportTemplates, signatures, users } from "./seed.js";
-import type { AuditLog, CatalogItem, ChecklistItem, ChecklistTemplate, Company, PdfVersion, Project, Report, ReportChecklistResponse, ReportEquipmentEntry, ReportLaborEntry, ReportOccurrenceEntry, ReportSections, ReportStructuredData, ReportTask, ReportTemplate, Signature, User } from "../types.js";
+import { checklists, company, equipment, labor, occurrenceTypes, projectGroups, projects, reports, reportTemplates, signatures, users } from "./seed.js";
+import type { AuditLog, CatalogItem, ChecklistItem, ChecklistTemplate, Company, PdfVersion, Project, Report, ReportAttachment, ReportChecklistResponse, ReportEquipmentEntry, ReportLaborEntry, ReportOccurrenceEntry, ReportSections, ReportStructuredData, ReportTask, ReportTemplate, Signature, User } from "../types.js";
 
 type CountRow = { count: number };
 
@@ -167,7 +167,26 @@ type ReportTaskRow = {
   description: string;
   status: ReportTask["status"];
   owner: string;
+  schedule_item: string;
+  start_date: string;
   due_date: string;
+  percent_complete: number;
+};
+
+type ReportAttachmentRow = {
+  id: string;
+  report_id: string;
+  project_id: string;
+  file_name: string;
+  mime_type: string;
+  attachment_type: ReportAttachment["attachmentType"];
+  source: ReportAttachment["source"];
+  task_id: string | null;
+  data_url: string;
+  caption: string;
+  created_at: string;
+  created_by_user_id: string;
+  created_by_name: string;
 };
 
 type AuditLogRow = {
@@ -439,7 +458,28 @@ function toReportTask(row: ReportTaskRow): ReportTask {
     description: row.description,
     status: row.status,
     owner: row.owner,
-    dueDate: row.due_date
+    scheduleItem: row.schedule_item ?? "",
+    startDate: row.start_date ?? "",
+    dueDate: row.due_date,
+    percentComplete: row.percent_complete ?? (row.status === "completed" ? 100 : 0)
+  };
+}
+
+function toReportAttachment(row: ReportAttachmentRow): ReportAttachment {
+  return {
+    id: row.id,
+    reportId: row.report_id,
+    projectId: row.project_id,
+    fileName: row.file_name,
+    mimeType: row.mime_type,
+    attachmentType: row.attachment_type,
+    source: row.source,
+    taskId: row.task_id ?? undefined,
+    dataUrl: row.data_url,
+    caption: row.caption,
+    createdAt: row.created_at,
+    createdByUserId: row.created_by_user_id,
+    createdByName: row.created_by_name
   };
 }
 
@@ -471,6 +511,7 @@ class AppDatabase {
       labor: this.countCatalog("labor"),
       equipment: this.countCatalog("equipment"),
       occurrenceTypes: this.countCatalog("occurrence_type"),
+      projectGroups: this.countCatalog("project_group"),
       checklists: this.count("checklist_templates"),
       users: this.count("users"),
       auditLogs: this.count("audit_logs")
@@ -638,7 +679,7 @@ class AppDatabase {
     return this.getReportTemplate(template.id);
   }
 
-  listCatalog(kind: "labor" | "equipment" | "occurrence_type") {
+  listCatalog(kind: "labor" | "equipment" | "occurrence_type" | "project_group") {
     return (this.db.prepare("SELECT * FROM catalog_items WHERE kind = ? ORDER BY description").all(kind) as CatalogItemRow[]).map(toCatalogItem);
   }
 
@@ -647,7 +688,7 @@ class AppDatabase {
     return row ? toCatalogItem(row) : undefined;
   }
 
-  createCatalogItem(kind: "labor" | "equipment" | "occurrence_type", item: CatalogItem, actor: AuditActor) {
+  createCatalogItem(kind: "labor" | "equipment" | "occurrence_type" | "project_group", item: CatalogItem, actor: AuditActor) {
     this.db
       .prepare(
         `INSERT INTO catalog_items (
@@ -667,7 +708,7 @@ class AppDatabase {
     return item;
   }
 
-  updateCatalogItem(kind: "labor" | "equipment" | "occurrence_type", item: CatalogItem, actor: AuditActor) {
+  updateCatalogItem(kind: "labor" | "equipment" | "occurrence_type" | "project_group", item: CatalogItem, actor: AuditActor) {
     const result = this.db
       .prepare(
         `UPDATE catalog_items
@@ -905,6 +946,45 @@ class AppDatabase {
     return (this.db.prepare("SELECT * FROM pdf_versions WHERE report_id = ? ORDER BY version_number ASC").all(reportId) as PdfVersionRow[]).map(toPdfVersion);
   }
 
+  listReportAttachments(reportId: string) {
+    return (this.db.prepare("SELECT * FROM report_attachments WHERE report_id = ? ORDER BY created_at DESC").all(reportId) as ReportAttachmentRow[]).map(toReportAttachment);
+  }
+
+  listProjectRecentAttachments(projectId: string, attachmentType?: ReportAttachment["attachmentType"], limit = 12) {
+    const rows = attachmentType
+      ? (this.db.prepare("SELECT * FROM report_attachments WHERE project_id = ? AND attachment_type = ? ORDER BY created_at DESC LIMIT ?").all(projectId, attachmentType, limit) as ReportAttachmentRow[])
+      : (this.db.prepare("SELECT * FROM report_attachments WHERE project_id = ? ORDER BY created_at DESC LIMIT ?").all(projectId, limit) as ReportAttachmentRow[]);
+    return rows.map(toReportAttachment);
+  }
+
+  countProjectAttachments(projectId: string, attachmentType?: ReportAttachment["attachmentType"]) {
+    const row = attachmentType
+      ? (this.db.prepare("SELECT COUNT(*) AS count FROM report_attachments WHERE project_id = ? AND attachment_type = ?").get(projectId, attachmentType) as CountRow)
+      : (this.db.prepare("SELECT COUNT(*) AS count FROM report_attachments WHERE project_id = ?").get(projectId) as CountRow);
+    return row.count;
+  }
+
+  createReportAttachment(attachment: ReportAttachment, actor: AuditActor) {
+    this.db
+      .prepare(
+        `INSERT INTO report_attachments (
+          id, report_id, project_id, file_name, mime_type, attachment_type, source, task_id, data_url,
+          caption, created_at, created_by_user_id, created_by_name
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(attachment.id, attachment.reportId, attachment.projectId, attachment.fileName, attachment.mimeType, attachment.attachmentType, attachment.source, attachment.taskId ?? null, attachment.dataUrl, attachment.caption, attachment.createdAt, attachment.createdByUserId, attachment.createdByName);
+
+    this.writeAudit({
+      entityType: "report",
+      entityId: attachment.reportId,
+      eventType: "report.attachment.created",
+      actor,
+      metadata: { fileName: attachment.fileName, attachmentType: attachment.attachmentType, source: attachment.source }
+    });
+
+    return attachment;
+  }
+
   private count(tableName: string) {
     const row = this.db.prepare(`SELECT COUNT(*) AS count FROM ${tableName}`).get() as CountRow;
     return row.count;
@@ -1021,10 +1101,10 @@ class AppDatabase {
       this.db
         .prepare(
           `INSERT INTO report_tasks (
-            id, report_id, description, status, owner, due_date
-          ) VALUES (?, ?, ?, ?, ?, ?)`
+            id, report_id, description, status, owner, schedule_item, start_date, due_date, percent_complete
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(task.id, reportId, task.description, task.status, task.owner, task.dueDate);
+        .run(task.id, reportId, task.description, task.status, task.owner, task.scheduleItem, task.startDate, task.dueDate, task.percentComplete);
     }
   }
 
@@ -1248,10 +1328,32 @@ class AppDatabase {
         description TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'pending',
         owner TEXT NOT NULL DEFAULT '',
-        due_date TEXT NOT NULL DEFAULT ''
+        schedule_item TEXT NOT NULL DEFAULT '',
+        start_date TEXT NOT NULL DEFAULT '',
+        due_date TEXT NOT NULL DEFAULT '',
+        percent_complete REAL NOT NULL DEFAULT 0
       );
 
       CREATE INDEX IF NOT EXISTS idx_report_tasks_report ON report_tasks(report_id);
+
+      CREATE TABLE IF NOT EXISTS report_attachments (
+        id TEXT PRIMARY KEY,
+        report_id TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+        project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        file_name TEXT NOT NULL,
+        mime_type TEXT NOT NULL,
+        attachment_type TEXT NOT NULL,
+        source TEXT NOT NULL,
+        task_id TEXT REFERENCES report_tasks(id) ON DELETE SET NULL,
+        data_url TEXT NOT NULL,
+        caption TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        created_by_user_id TEXT NOT NULL,
+        created_by_name TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_report_attachments_report ON report_attachments(report_id);
+      CREATE INDEX IF NOT EXISTS idx_report_attachments_project ON report_attachments(project_id, created_at);
 
       CREATE TABLE IF NOT EXISTS pdf_versions (
         id TEXT PRIMARY KEY,
@@ -1277,6 +1379,17 @@ class AppDatabase {
 
       CREATE INDEX IF NOT EXISTS idx_audit_logs_entity ON audit_logs(entity_type, entity_id, occurred_at);
     `);
+    this.ensureColumn("report_tasks", "schedule_item", "ALTER TABLE report_tasks ADD COLUMN schedule_item TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("report_tasks", "start_date", "ALTER TABLE report_tasks ADD COLUMN start_date TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("report_tasks", "percent_complete", "ALTER TABLE report_tasks ADD COLUMN percent_complete REAL NOT NULL DEFAULT 0");
+    this.ensureColumn("report_attachments", "task_id", "ALTER TABLE report_attachments ADD COLUMN task_id TEXT REFERENCES report_tasks(id) ON DELETE SET NULL");
+  }
+
+  private ensureColumn(tableName: string, columnName: string, statement: string) {
+    const columns = this.db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === columnName)) {
+      this.db.exec(statement);
+    }
   }
 
   private seed() {
@@ -1324,6 +1437,7 @@ class AppDatabase {
     this.seedCatalog("labor", labor);
     this.seedCatalog("equipment", equipment);
     this.seedCatalog("occurrence_type", occurrenceTypes);
+    this.seedCatalog("project_group", projectGroups);
 
     for (const checklist of checklists) {
       this.db.prepare("INSERT OR IGNORE INTO checklist_templates (id, name, status) VALUES (?, ?, ?)").run(checklist.id, checklist.name, checklist.status);

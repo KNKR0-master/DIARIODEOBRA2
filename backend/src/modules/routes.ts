@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import { database } from "../data/database.js";
-import type { AuditLog, CatalogItem, ChecklistTemplate, ContractType, PdfVersion, Project, ProjectStatus, Report, ReportChecklistResponse, ReportEquipmentEntry, ReportLaborEntry, ReportOccurrenceEntry, ReportSections, ReportStructuredData, ReportTask, ReportTemplate, User } from "../types.js";
+import type { AuditLog, CatalogItem, ChecklistTemplate, ContractType, PdfVersion, Project, ProjectStatus, Report, ReportAttachment, ReportChecklistResponse, ReportEquipmentEntry, ReportLaborEntry, ReportOccurrenceEntry, ReportSections, ReportStructuredData, ReportTask, ReportTemplate, User } from "../types.js";
 
 const defaultActor = {
   actorUserId: "user-joao",
@@ -142,11 +142,24 @@ const updateReportSchema = z.object({
           description: z.string().min(1),
           status: z.enum(["pending", "in_progress", "completed"]).default("pending"),
           owner: z.string().optional().default(""),
-          dueDate: z.string().optional().default("")
+          scheduleItem: z.string().optional().default(""),
+          startDate: z.string().optional().default(""),
+          dueDate: z.string().optional().default(""),
+          percentComplete: z.number().min(0).max(100).optional().default(0)
         })
       )
     })
     .optional()
+});
+
+const attachmentSchema = z.object({
+  fileName: z.string().min(1),
+  mimeType: z.string().min(1),
+  attachmentType: z.enum(["photo", "video", "document"]).default("photo"),
+  source: z.enum(["local_upload", "whatsapp"]).default("local_upload"),
+  taskId: z.string().optional(),
+  dataUrl: z.string().min(1),
+  caption: z.string().optional().default("")
 });
 
 const approvalSchema = z.object({
@@ -181,7 +194,8 @@ const emptyStructuredData = (): ReportStructuredData => ({
 const catalogKinds = {
   labor: "labor",
   equipment: "equipment",
-  occurrences: "occurrence_type"
+  occurrences: "occurrence_type",
+  "project-groups": "project_group"
 } as const;
 
 const getCatalogKind = (kind: string) => catalogKinds[kind as keyof typeof catalogKinds];
@@ -252,7 +266,10 @@ const normalizeStructuredData = (reportId: string, structuredData?: StructuredDa
     description: task.description,
     status: task.status ?? "pending",
     owner: task.owner ?? "",
-    dueDate: task.dueDate ?? ""
+    scheduleItem: task.scheduleItem ?? "",
+    startDate: task.startDate ?? "",
+    dueDate: task.dueDate ?? "",
+    percentComplete: task.percentComplete ?? (task.status === "completed" ? 100 : 0)
   }))
 });
 
@@ -408,6 +425,7 @@ export async function registerRoutes(app: FastifyInstance) {
     }
 
     const projectReports = database.listReports({ projectId: id });
+    const recentPhotos = database.listProjectRecentAttachments(id, "photo", 12);
 
     return {
       project,
@@ -416,17 +434,62 @@ export async function registerRoutes(app: FastifyInstance) {
         activities: projectReports.filter((report) => report.sections.activities.trim()).length,
         occurrences: projectReports.reduce((total, report) => total + report.structuredData.occurrenceEntries.length, 0),
         comments: projectReports.filter((report) => report.sections.comments.trim()).length,
-        photos: 0,
+        photos: database.countProjectAttachments(id, "photo"),
         videos: 0
       },
       recentReports: projectReports,
-      recentPhotos: []
+      recentPhotos
     };
   });
 
   app.get("/api/reports", async (request) => {
     const query = request.query as { projectId?: string; status?: string };
     return { reports: database.listReports({ projectId: query.projectId, status: query.status }) };
+  });
+
+  app.get("/api/reports/:id/attachments", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const report = database.getReport(id);
+
+    if (!report) {
+      return reply.code(404).send({ error: "Report not found" });
+    }
+
+    return { attachments: database.listReportAttachments(id) };
+  });
+
+  app.post("/api/reports/:id/attachments", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const report = database.getReport(id);
+
+    if (!report) {
+      return reply.code(404).send({ error: "Report not found" });
+    }
+
+    const parsedBody = attachmentSchema.safeParse(request.body);
+
+    if (!parsedBody.success) {
+      return reply.code(400).send({ error: "Invalid attachment payload", details: parsedBody.error.flatten() });
+    }
+
+    const payload = parsedBody.data;
+    const attachment: ReportAttachment = {
+      id: `attachment-${randomUUID()}`,
+      reportId: report.id,
+      projectId: report.projectId,
+      fileName: payload.fileName,
+      mimeType: payload.mimeType,
+      attachmentType: payload.attachmentType,
+      source: payload.source,
+      taskId: payload.taskId,
+      dataUrl: payload.dataUrl,
+      caption: payload.caption,
+      createdAt: new Date().toISOString(),
+      createdByUserId: defaultActor.actorUserId,
+      createdByName: defaultActor.actorName
+    };
+
+    return reply.code(201).send({ attachment: database.createReportAttachment(attachment, defaultActor) });
   });
 
   app.post("/api/reports", async (request, reply) => {
@@ -723,6 +786,8 @@ export async function registerRoutes(app: FastifyInstance) {
   app.get("/api/catalogs/equipment", async () => ({ equipment: database.listCatalog("equipment") }));
 
   app.get("/api/catalogs/occurrence-types", async () => ({ occurrenceTypes: database.listCatalog("occurrence_type") }));
+
+  app.get("/api/catalogs/project-groups", async () => ({ projectGroups: database.listCatalog("project_group") }));
 
   app.get("/api/catalogs/checklists", async () => ({ checklists: database.listChecklists() }));
 

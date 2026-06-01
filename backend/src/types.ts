@@ -142,7 +142,10 @@ export interface ReportTask {
   description: string;
   status: "pending" | "in_progress" | "completed";
   owner: string;
+  scheduleItem: string;
+  startDate: string;
   dueDate: string;
+  percentComplete: number;
 }
 
 export interface ReportStructuredData {
@@ -151,6 +154,22 @@ export interface ReportStructuredData {
   occurrenceEntries: ReportOccurrenceEntry[];
   checklistResponses: ReportChecklistResponse[];
   tasks: ReportTask[];
+}
+
+export interface ReportAttachment {
+  id: string;
+  reportId: string;
+  projectId: string;
+  fileName: string;
+  mimeType: string;
+  attachmentType: "photo" | "video" | "document";
+  source: "local_upload" | "whatsapp";
+  taskId?: string;
+  dataUrl: string;
+  caption: string;
+  createdAt: string;
+  createdByUserId: string;
+  createdByName: string;
 }
 
 export interface Report {

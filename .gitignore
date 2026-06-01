@@ -16,3 +16,4 @@ coverage/
 backend/.data/
 research/output/*
 !research/output/.gitkeep
+output/

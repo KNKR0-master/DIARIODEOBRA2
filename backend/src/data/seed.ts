@@ -113,6 +113,17 @@ export const equipment: CatalogItem[] = [
   sourceType: "standard"
 }));
 
+export const projectGroups: CatalogItem[] = [
+  "Todas as obras",
+  "Obras residenciais",
+  "Obras comerciais"
+].map((description, index) => ({
+  id: `project-group-${index + 1}`,
+  description,
+  status: "active",
+  sourceType: "standard"
+}));
+
 export const occurrenceTypes: CatalogItem[] = [
   "Acidente de trabalho",
   "Alteração de projeto",
@@ -189,7 +200,7 @@ export const reports: Report[] = [
         { id: "report-draft-1-checklist-1", reportId: "report-draft-1", checklistId: "checklist-quality", checklistItemId: "checklist-quality-1", itemLabel: "1 Item", question: "O servico executado esta conforme?", answer: "Matches", compliant: true, notes: "Conferência visual realizada." }
       ],
       tasks: [
-        { id: "report-draft-1-task-1", reportId: "report-draft-1", description: "Continuar alvenaria do pavimento 2", status: "pending", owner: "Mestre de Obra", dueDate: "2026-05-13" }
+        { id: "report-draft-1-task-1", reportId: "report-draft-1", description: "Continuar alvenaria do pavimento 2", status: "pending", owner: "Mestre de Obra", scheduleItem: "Alvenaria pavimento 2", startDate: "2026-05-12", dueDate: "2026-05-13", percentComplete: 35 }
       ]
     }
   }

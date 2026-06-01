@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
+import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import {
   ArrowLeft,
   BarChart3,
@@ -16,6 +16,7 @@ import {
   FileText,
   HardHat,
   ListChecks,
+  LogOut,
   LockKeyhole,
   Mic,
   Plus,
@@ -45,6 +46,7 @@ import type {
   Project,
   ProjectStatus,
   Report,
+  ReportAttachment,
   ReportChecklistResponse,
   ReportEquipmentEntry,
   ReportLaborEntry,
@@ -82,7 +84,7 @@ type Page =
   | "settings-project-labor"
   | "settings-project-equipment";
 
-type CatalogKind = "labor" | "equipment" | "occurrences";
+type CatalogKind = "labor" | "equipment" | "occurrences" | "project-groups";
 type ModalState =
   | { type: "project-create" }
   | { type: "project-edit"; project: Project }
@@ -133,6 +135,14 @@ const analysisItems = [
   { page: "analysis-inserted" as Page, label: "Dados inseridos nos relatórios" }
 ];
 
+const analysisIcons: Partial<Record<Page, LucideIcon>> = {
+  analysis: BarChart3,
+  "analysis-created": FileText,
+  "analysis-pending": ClipboardList,
+  "analysis-tasks": ListChecks,
+  "analysis-inserted": ClipboardCheck
+};
+
 const settingsItems = [
   { page: "settings-profile" as Page, label: "Meu perfil", icon: User },
   { page: "settings-company" as Page, label: "Empresa", icon: Building2 },
@@ -156,6 +166,7 @@ function App() {
   const [labor, setLabor] = useState<CatalogItem[]>([]);
   const [equipment, setEquipment] = useState<CatalogItem[]>([]);
   const [occurrences, setOccurrences] = useState<CatalogItem[]>([]);
+  const [projectGroups, setProjectGroups] = useState<CatalogItem[]>([]);
   const [checklists, setChecklists] = useState<ChecklistTemplate[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedReportId, setSelectedReportId] = useState("");
@@ -170,7 +181,7 @@ function App() {
   async function loadInitialData() {
     try {
       setLoading(true);
-      const [projectsResponse, reportsResponse, templatesResponse, usersResponse, laborResponse, equipmentResponse, occurrenceResponse, checklistResponse] = await Promise.all([
+      const [projectsResponse, reportsResponse, templatesResponse, usersResponse, laborResponse, equipmentResponse, occurrenceResponse, projectGroupsResponse, checklistResponse] = await Promise.all([
         api.getProjects(),
         api.getReports(),
         api.getReportTemplates(),
@@ -178,6 +189,7 @@ function App() {
         api.getLabor(),
         api.getEquipment(),
         api.getOccurrenceTypes(),
+        api.getProjectGroups(),
         api.getChecklists()
       ]);
 
@@ -188,6 +200,7 @@ function App() {
       setLabor(laborResponse.labor);
       setEquipment(equipmentResponse.equipment);
       setOccurrences(occurrenceResponse.occurrenceTypes);
+      setProjectGroups(projectGroupsResponse.projectGroups);
       setChecklists(checklistResponse.checklists);
       setSelectedProjectId((current) => current || projectsResponse.projects[0]?.id || "");
       setSelectedReportId((current) => current || reportsResponse.reports[0]?.id || "");
@@ -259,7 +272,7 @@ function App() {
 
   async function handleSaveCatalog(kind: CatalogKind, payload: CatalogItemPayload, item?: CatalogItem) {
     const response = item ? await api.updateCatalogItem(kind, item.id, payload) : await api.createCatalogItem(kind, payload);
-    const setMap = { labor: setLabor, equipment: setEquipment, occurrences: setOccurrences };
+    const setMap = { labor: setLabor, equipment: setEquipment, occurrences: setOccurrences, "project-groups": setProjectGroups };
     setMap[kind]((current) => [response.item, ...current.filter((entry) => entry.id !== response.item.id)].sort((a, b) => a.description.localeCompare(b.description)));
   }
 
@@ -318,6 +331,11 @@ function App() {
       return;
     }
 
+    if (page === "settings-project-groups") {
+      setModal({ type: "catalog", kind: "project-groups" });
+      return;
+    }
+
     if (page === "settings-checklist") {
       setModal({ type: "checklist" });
       return;
@@ -344,6 +362,7 @@ function App() {
             labor={labor}
             equipment={equipment}
             occurrences={occurrences}
+            projectGroups={projectGroups}
             checklists={checklists}
             projects={projects}
             onOpenModal={setModal}
@@ -386,7 +405,7 @@ function App() {
             onApprove={handleApproveReport}
           />
         ) : page.startsWith("analysis") ? (
-          <AnalysisPage view={page} reports={reports} projects={projects} onOpenReport={openReport} />
+          <AnalysisPage view={page} reports={reports} projects={projects} onOpenReport={openReport} onNavigate={setPage} />
         ) : page === "chat" ? (
           <ChatHubPage selectedProject={selectedProject} />
         ) : (
@@ -396,6 +415,7 @@ function App() {
       <AppModal
         modal={modal}
         projects={projects}
+        projectGroups={projectGroups}
         templates={templates}
         onClose={() => setModal(null)}
         onCreateProject={handleCreateProject}
@@ -425,21 +445,24 @@ function TopNav({ activePage, onNavigate, onCreate }: { activePage: Page; onNavi
           );
         })}
         <div className="nav-dropdown">
-          <button className={activePage.startsWith("analysis") ? "nav-item active" : "nav-item"} onClick={() => onNavigate("analysis")}>
+          <button className={activePage.startsWith("analysis") ? "nav-item active" : "nav-item"} type="button" aria-haspopup="true">
             <BarChart3 size={16} />
             Análise de dados
           </button>
           <div className="nav-dropdown-menu">
-            {analysisItems.map((item) => <button key={item.page} onClick={() => onNavigate(item.page)}>{item.label}</button>)}
+            {analysisItems.map((item) => {
+              const ItemIcon = analysisIcons[item.page] ?? BarChart3;
+              return <button key={item.page} onClick={() => onNavigate(item.page)}><ItemIcon size={16} />{item.label}</button>;
+            })}
           </div>
         </div>
         <div className="nav-dropdown">
-          <button className={activePage.startsWith("settings") ? "nav-item active" : "nav-item"} onClick={() => onNavigate("settings-profile")}>
+          <button className={activePage.startsWith("settings") ? "nav-item active" : "nav-item"} type="button" aria-haspopup="true">
             <Settings size={16} />
             Cadastros
           </button>
           <div className="nav-dropdown-menu">
-            {settingsItems.map((item) => <button key={item.page} onClick={() => onNavigate(item.page)}>{item.label}</button>)}
+            {settingsItems.map((item) => <button key={item.page} onClick={() => onNavigate(item.page)}><item.icon size={16} />{item.label}</button>)}
           </div>
         </div>
         <button className={activePage === "chat" ? "nav-item active" : "nav-item"} onClick={() => onNavigate("chat")}>
@@ -453,11 +476,18 @@ function TopNav({ activePage, onNavigate, onCreate }: { activePage: Page; onNavi
           <Plus size={17} />
           ADICIONAR
         </button>
-        <div className="user-chip">
-          <span>JO</span>
-          <div>
-            <strong>JOAO VICTOR</strong>
-            <small>Administrador</small>
+        <div className="user-menu">
+          <button className="user-chip" type="button" aria-haspopup="true">
+            <span>JO</span>
+            <div>
+              <strong>JOAO VICTOR</strong>
+              <small>Administrador</small>
+            </div>
+          </button>
+          <div className="user-menu-dropdown">
+            <button type="button" onClick={() => onNavigate("settings-profile")}><User size={15} />Meu perfil</button>
+            <button type="button" onClick={() => onNavigate("settings-users")}><Users size={15} />Usuarios e acessos</button>
+            <button type="button" disabled title="Login, sessao e logout real entram na etapa de autenticacao."><LogOut size={15} />Sair</button>
           </div>
         </div>
       </div>
@@ -521,15 +551,38 @@ function ProjectsPage({ projects, reports, onOpenProject, onAddProject }: { proj
 }
 
 function ProjectOverview({ project, reports, onBack, onReports, onSearch, onEdit, onOpenReport }: { project: Project; reports: Report[]; onBack: () => void; onReports: () => void; onSearch: () => void; onEdit: () => void; onOpenReport: (reportId: string) => void }) {
+  const [recentPhotos, setRecentPhotos] = useState<ReportAttachment[]>([]);
+  const [photoCount, setPhotoCount] = useState(0);
   const approved = reports.filter((report) => report.status === "approved").length;
   const pending = reports.filter((report) => report.status === "pending_review").length;
   const drafts = reports.filter((report) => report.status === "draft" || report.status === "revised").length;
+
+  useEffect(() => {
+    let active = true;
+    api
+      .getProjectOverview(project.id)
+      .then((response) => {
+        if (active) {
+          setRecentPhotos(response.recentPhotos);
+          setPhotoCount(response.counters.photos);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setRecentPhotos([]);
+          setPhotoCount(0);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, [project.id, reports]);
   const cards = [
     { label: "Relatórios", value: reports.length, icon: CalendarDays },
     { label: "Rascunhos", value: drafts, icon: ClipboardList },
     { label: "Em revisão", value: pending, icon: ShieldCheck },
     { label: "Aprovados", value: approved, icon: CheckCircle2 },
-    { label: "Fotos", value: 0, icon: Camera },
+    { label: "Fotos", value: photoCount, icon: Camera },
     { label: "Vídeos", value: 0, icon: Video }
   ];
 
@@ -556,13 +609,15 @@ function ProjectOverview({ project, reports, onBack, onReports, onSearch, onEdit
             </div>
             {reports.length > 0 ? <ReportCompactList reports={reports.slice(0, 4)} onOpenReport={onOpenReport} /> : <EmptyState icon={ClipboardList} title="Nenhum relatório encontrado" text="Adicione dados ao relatório para acompanhar a evolução." />}
           </section>
-          <section className="panel empty-panel">
-            <h2>Fotos recentes</h2>
-            <div>
+          <section className="panel recent-photo-panel">
+            <div className="panel-header"><h2>Fotos recentes</h2><span className="badge gray">{photoCount} foto(s)</span></div>
+            {recentPhotos.length > 0 ? <div className="photo-grid">{recentPhotos.slice(0, 6).map((photo) => <figure key={photo.id}><img src={photo.dataUrl} alt={photo.caption || photo.fileName} /><figcaption>{photo.caption || photo.fileName}</figcaption></figure>)}</div> : (
+            <div className="empty-panel compact-empty">
               <Camera size={42} />
               <strong>Nenhuma foto encontrada</strong>
               <span>As fotos serão exibidas quando forem anexadas aos RDOs.</span>
             </div>
+            )}
           </section>
         </div>
         <section className="panel">
@@ -690,20 +745,28 @@ function ReportsPage({ projects, selectedProjectId, reports, onSelectProject, on
 function ReportDetailPage({ report, project, template, labor, equipment, occurrences, checklists, onBack, onSave, onSubmit, onApprove }: { report: Report; project?: Project; template?: ReportTemplate; labor: CatalogItem[]; equipment: CatalogItem[]; occurrences: CatalogItem[]; checklists: ChecklistTemplate[]; onBack: () => void; onSave: (reportId: string, sections: Partial<ReportSections>, structuredData: ReportStructuredData) => Promise<void>; onSubmit: (reportId: string) => Promise<void>; onApprove: (reportId: string) => Promise<void> }) {
   const [sections, setSections] = useState(report.sections);
   const [structuredData, setStructuredData] = useState(report.structuredData);
+  const [attachments, setAttachments] = useState<ReportAttachment[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [mode, setMode] = useState<"read" | "edit">(report.status === "draft" ? "edit" : "read");
 
   useEffect(() => {
     let active = true;
     setSections(report.sections);
     setStructuredData(report.structuredData);
+    setAttachments([]);
     setAuditLogs([]);
     setError("");
+    setMode(report.status === "draft" ? "edit" : "read");
     api
       .getReportAudit(report.id)
       .then((response) => active && setAuditLogs(response.auditLogs))
       .catch(() => active && setAuditLogs([]));
+    api
+      .getReportAttachments(report.id)
+      .then((response) => active && setAttachments(response.attachments))
+      .catch(() => active && setAttachments([]));
     return () => {
       active = false;
     };
@@ -735,6 +798,21 @@ function ReportDetailPage({ report, project, template, labor, equipment, occurre
     setStructuredData((current) => ({ ...current, ...updates }));
   };
 
+  const handleAttachmentUpload = async (file: File, caption: string, taskId?: string) => {
+    const dataUrl = await fileToDataUrl(file);
+    const attachmentType: ReportAttachment["attachmentType"] = file.type.startsWith("image/") ? "photo" : file.type.startsWith("video/") ? "video" : "document";
+    const response = await api.createReportAttachment(report.id, {
+      fileName: file.name,
+      mimeType: file.type || "application/octet-stream",
+      attachmentType,
+      source: "local_upload",
+      taskId,
+      dataUrl,
+      caption
+    });
+    setAttachments((current) => [response.attachment, ...current]);
+  };
+
   return (
     <section className="page wide">
       <button className="back-title inline-back" onClick={onBack}>
@@ -759,8 +837,12 @@ function ReportDetailPage({ report, project, template, labor, equipment, occurre
         <section className="panel report-editor">
           <div className="panel-header">
             <h2>Preenchimento do relatório</h2>
-            <span className="badge gray">{locked ? "Somente leitura" : "Editável"}</span>
+            <span className="badge gray">{locked || mode === "read" ? "Leitura" : "Editável"}</span>
           </div>
+          {mode === "read" ? (
+            <ReportReadOnlyView report={report} project={project} sections={sections} structuredData={structuredData} attachments={attachments} />
+          ) : (
+            <>
           <div className="editor-grid">
             {visibleFields.map((field) => (
               <label className="editor-field" key={field.key}>
@@ -780,11 +862,15 @@ function ReportDetailPage({ report, project, template, labor, equipment, occurre
             checklists={checklists}
             onChange={updateStructuredData}
           />
+          <ReportAttachmentsPanel locked={locked} tasks={structuredData.tasks} attachments={attachments} onUpload={handleAttachmentUpload} />
+            </>
+          )}
           <div className="button-row">
-            <button className="secondary-action" disabled={locked || Boolean(busy)} onClick={() => void runAction("save", () => onSave(report.id, sections, structuredData))}>
+            {mode === "read" && !locked && <button className="secondary-action" type="button" onClick={() => setMode("edit")}><Edit3 size={17} />Editar lançamento</button>}
+            {mode === "edit" && <button className="secondary-action" disabled={locked || Boolean(busy)} onClick={() => void runAction("save", () => onSave(report.id, sections, structuredData))}>
               <Save size={17} />
               {busy === "save" ? "Salvando..." : "Salvar rascunho"}
-            </button>
+            </button>}
             <button className="primary-action" disabled={!canSubmit || Boolean(busy)} onClick={() => void runAction("submit", () => onSubmit(report.id))}>
               <Send size={17} />
               {busy === "submit" ? "Enviando..." : "Enviar para revisão"}
@@ -822,6 +908,98 @@ function ReportDetailPage({ report, project, template, labor, equipment, occurre
   );
 }
 
+function ReportReadOnlyView({ report, project, sections, structuredData, attachments }: { report: Report; project?: Project; sections: ReportSections; structuredData: ReportStructuredData; attachments: ReportAttachment[] }) {
+  const textBlocks = [
+    ["Condições climáticas", sections.weather],
+    ["Atividades executadas", sections.activities],
+    ["Comentários", sections.comments]
+  ].filter(([, value]) => value.trim());
+  const timelineItems = [
+    ...textBlocks.map(([title, value]) => ({ title, value, meta: "Campo narrativo" })),
+    ...structuredData.laborEntries.map((entry) => ({ title: entry.description, value: `${entry.quantity} ${entry.unit}`, meta: "Mão de obra" })),
+    ...structuredData.equipmentEntries.map((entry) => ({ title: entry.description, value: `${entry.quantity} un. / ${entry.hours}h`, meta: "Equipamento" })),
+    ...structuredData.occurrenceEntries.map((entry) => ({ title: entry.description, value: occurrenceSeverityLabel(entry.severity), meta: "Ocorrência" })),
+    ...structuredData.checklistResponses.map((entry) => ({ title: entry.question, value: entry.answer || "Sem resposta", meta: "Checklist" })),
+    ...structuredData.tasks.map((task) => ({ title: task.scheduleItem ? `${task.scheduleItem} - ${task.description}` : task.description, value: `${taskStatusLabel(task.status)} / ${task.percentComplete ?? 0}%${task.owner ? ` / ${task.owner}` : ""}${task.startDate ? ` / Início ${formatDate(task.startDate)}` : ""}${task.dueDate ? ` / Prazo ${formatDate(task.dueDate)}` : ""}`, meta: "Tarefa" }))
+  ];
+
+  return (
+    <div className="report-read-view">
+      <div className="report-read-summary">
+        <Info label="Obra" value={project?.name ?? "Obra"} />
+        <Info label="Data" value={formatDate(report.reportDate)} />
+        <Info label="Status" value={reportStatusLabel(report.status)} badge />
+      </div>
+      <div className="report-conversation">
+        {timelineItems.length > 0 ? timelineItems.map((item, index) => (
+          <article className="report-message" key={`${item.meta}-${item.title}-${index}`}>
+            <span>{item.meta}</span>
+            <strong>{item.title}</strong>
+            <p>{item.value}</p>
+          </article>
+        )) : <EmptyState icon={FileText} title="Sem informações lançadas" text="Use o modo de edição para preencher o RDO." />}
+      </div>
+      <AttachmentGallery attachments={attachments} tasks={structuredData.tasks} />
+    </div>
+  );
+}
+
+function ReportAttachmentsPanel({ locked, tasks, attachments, onUpload }: { locked: boolean; tasks: ReportTask[]; attachments: ReportAttachment[]; onUpload: (file: File, caption: string, taskId?: string) => Promise<void> }) {
+  const [caption, setCaption] = useState("");
+  const [taskId, setTaskId] = useState("");
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    try {
+      setUploading(true);
+      setError("");
+      await onUpload(file, caption, taskId || undefined);
+      setCaption("");
+      event.target.value = "";
+    } catch (uploadError) {
+      setError(uploadError instanceof Error ? uploadError.message : "Não foi possível anexar o arquivo.");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <section className="structured-panel">
+      <div className="structured-panel-header"><h3>Fotos e anexos</h3><span>Arquivos enviados aqui ficam vinculados ao RDO e aparecem em Fotos recentes da obra.</span></div>
+      {!locked && (
+        <div className="attachment-upload-row">
+          <input placeholder="Legenda da foto ou anexo" value={caption} onChange={(event) => setCaption(event.target.value)} />
+          <select value={taskId} onChange={(event) => setTaskId(event.target.value)}>
+            <option value="">Relatorio geral</option>
+            {tasks.map((task) => <option value={task.id} key={task.id}>{task.scheduleItem || task.description}</option>)}
+          </select>
+          <label className="upload-button"><Upload size={16} />{uploading ? "Enviando..." : "Selecionar arquivo"}<input disabled={uploading} type="file" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx" onChange={(event) => void handleFileChange(event)} /></label>
+        </div>
+      )}
+      {error && <div className="error-banner compact">{error}</div>}
+      <AttachmentGallery attachments={attachments} tasks={tasks} />
+    </section>
+  );
+}
+
+function AttachmentGallery({ attachments, tasks = [] }: { attachments: ReportAttachment[]; tasks?: ReportTask[] }) {
+  if (attachments.length === 0) return <span className="muted-text">Nenhuma foto ou anexo vinculado a este RDO.</span>;
+  const taskLabelById = new Map(tasks.map((task) => [task.id, task.scheduleItem || task.description]));
+  return (
+    <div className="attachment-grid">
+      {attachments.map((attachment) => (
+        <figure key={attachment.id}>
+          {attachment.attachmentType === "photo" ? <img src={attachment.dataUrl} alt={attachment.caption || attachment.fileName} /> : <div className="attachment-file"><FileText size={28} /><span>{attachment.fileName}</span></div>}
+          <figcaption>{attachment.caption || attachment.fileName}{attachment.taskId && taskLabelById.get(attachment.taskId) && <small>Tarefa: {taskLabelById.get(attachment.taskId)}</small>}<small>{formatDateTime(attachment.createdAt)}</small></figcaption>
+        </figure>
+      ))}
+    </div>
+  );
+}
+
 function StructuredReportEditor({
   reportId,
   locked,
@@ -851,7 +1029,19 @@ function StructuredReportEditor({
   const [laborDraft, setLaborDraft] = useState({ catalogItemId: activeLabor[0]?.id ?? "", description: "", quantity: 1, unit: "profissionais", notes: "" });
   const [equipmentDraft, setEquipmentDraft] = useState({ catalogItemId: activeEquipment[0]?.id ?? "", description: "", quantity: 1, hours: 0, notes: "" });
   const [occurrenceDraft, setOccurrenceDraft] = useState({ catalogItemId: activeOccurrences[0]?.id ?? "", description: "", severity: "info" as ReportOccurrenceEntry["severity"], notes: "" });
-  const [taskDraft, setTaskDraft] = useState({ description: "", status: "pending" as ReportTask["status"], owner: "", dueDate: "" });
+  const [taskDraft, setTaskDraft] = useState({ description: "", status: "pending" as ReportTask["status"], owner: "", scheduleItem: "", startDate: "", dueDate: "", percentComplete: 0 });
+
+  useEffect(() => {
+    setLaborDraft((current) => ({ ...current, catalogItemId: activeLabor.some((item) => item.id === current.catalogItemId) ? current.catalogItemId : activeLabor[0]?.id ?? "" }));
+  }, [labor]);
+
+  useEffect(() => {
+    setEquipmentDraft((current) => ({ ...current, catalogItemId: activeEquipment.some((item) => item.id === current.catalogItemId) ? current.catalogItemId : activeEquipment[0]?.id ?? "" }));
+  }, [equipment]);
+
+  useEffect(() => {
+    setOccurrenceDraft((current) => ({ ...current, catalogItemId: activeOccurrences.some((item) => item.id === current.catalogItemId) ? current.catalogItemId : activeOccurrences[0]?.id ?? "" }));
+  }, [occurrences]);
 
   const addLabor = () => {
     const catalog = activeLabor.find((item) => item.id === laborDraft.catalogItemId);
@@ -883,9 +1073,10 @@ function StructuredReportEditor({
   const addTask = () => {
     const description = taskDraft.description.trim();
     if (!description) return;
-    const task: ReportTask = { id: makeLocalId("task"), reportId, description, status: taskDraft.status, owner: taskDraft.owner, dueDate: taskDraft.dueDate };
+    const percentComplete = Math.max(0, Math.min(100, Number(taskDraft.percentComplete) || 0));
+    const task: ReportTask = { id: makeLocalId("task"), reportId, description, status: taskDraft.status, owner: taskDraft.owner, scheduleItem: taskDraft.scheduleItem, startDate: taskDraft.startDate, dueDate: taskDraft.dueDate, percentComplete };
     onChange({ tasks: [...structuredData.tasks, task] });
-    setTaskDraft({ description: "", status: "pending", owner: "", dueDate: "" });
+    setTaskDraft({ description: "", status: "pending", owner: "", scheduleItem: "", startDate: "", dueDate: "", percentComplete: 0 });
   };
 
   const upsertChecklistResponse = (response: ReportChecklistResponse) => {
@@ -895,25 +1086,25 @@ function StructuredReportEditor({
   return (
     <div className="structured-editor">
       {enabledItems.includes("labor") && (
-        <StructuredPanel title="Mão de obra">
-          {!locked && <div className="structured-form-row"><select value={laborDraft.catalogItemId} onChange={(event) => setLaborDraft((current) => ({ ...current, catalogItemId: event.target.value }))}>{activeLabor.map((item) => <option value={item.id} key={item.id}>{item.description}</option>)}</select><input placeholder="Ou nova função" value={laborDraft.description} onChange={(event) => setLaborDraft((current) => ({ ...current, description: event.target.value }))} /><input type="number" min="0" value={laborDraft.quantity} onChange={(event) => setLaborDraft((current) => ({ ...current, quantity: Number(event.target.value) }))} /><button className="small-primary" type="button" onClick={addLabor}><Plus size={15} />Adicionar</button></div>}
+        <StructuredPanel title="Mão de obra" hint="Use uma sugestao ativa ou descreva uma nova funcao para este RDO.">
+          {!locked && <div className="structured-form-row"><label>Funcao sugerida<select value={laborDraft.catalogItemId} onChange={(event) => setLaborDraft((current) => ({ ...current, catalogItemId: event.target.value }))}><option value="">Sem sugestao</option>{activeLabor.map((item) => <option value={item.id} key={item.id}>{item.description}</option>)}</select></label><label>Nova funcao<input placeholder="Ex: Carpinteiro" value={laborDraft.description} onChange={(event) => setLaborDraft((current) => ({ ...current, description: event.target.value }))} /></label><label>Quantidade<input type="number" min="0" value={laborDraft.quantity} onChange={(event) => setLaborDraft((current) => ({ ...current, quantity: Number(event.target.value) }))} /></label><button className="small-primary" type="button" onClick={addLabor}><Plus size={15} />Adicionar</button></div>}
           <StructuredRows rows={structuredData.laborEntries.map((entry) => ({ id: entry.id, main: entry.description, meta: `${entry.quantity} ${entry.unit}${entry.notes ? ` / ${entry.notes}` : ""}` }))} locked={locked} onRemove={(id) => onChange({ laborEntries: structuredData.laborEntries.filter((entry) => entry.id !== id) })} />
         </StructuredPanel>
       )}
       {enabledItems.includes("equipment") && (
-        <StructuredPanel title="Equipamentos">
-          {!locked && <div className="structured-form-row"><select value={equipmentDraft.catalogItemId} onChange={(event) => setEquipmentDraft((current) => ({ ...current, catalogItemId: event.target.value }))}>{activeEquipment.map((item) => <option value={item.id} key={item.id}>{item.description}</option>)}</select><input placeholder="Ou novo equipamento" value={equipmentDraft.description} onChange={(event) => setEquipmentDraft((current) => ({ ...current, description: event.target.value }))} /><input type="number" min="0" value={equipmentDraft.quantity} onChange={(event) => setEquipmentDraft((current) => ({ ...current, quantity: Number(event.target.value) }))} /><input type="number" min="0" placeholder="Horas" value={equipmentDraft.hours} onChange={(event) => setEquipmentDraft((current) => ({ ...current, hours: Number(event.target.value) }))} /><button className="small-primary" type="button" onClick={addEquipment}><Plus size={15} />Adicionar</button></div>}
+        <StructuredPanel title="Equipamentos" hint="Registre equipamento, quantidade e horas de uso no dia.">
+          {!locked && <div className="structured-form-row"><label>Equipamento sugerido<select value={equipmentDraft.catalogItemId} onChange={(event) => setEquipmentDraft((current) => ({ ...current, catalogItemId: event.target.value }))}><option value="">Sem sugestao</option>{activeEquipment.map((item) => <option value={item.id} key={item.id}>{item.description}</option>)}</select></label><label>Novo equipamento<input placeholder="Ex: Serra circular" value={equipmentDraft.description} onChange={(event) => setEquipmentDraft((current) => ({ ...current, description: event.target.value }))} /></label><label>Quantidade<input type="number" min="0" value={equipmentDraft.quantity} onChange={(event) => setEquipmentDraft((current) => ({ ...current, quantity: Number(event.target.value) }))} /></label><label>Horas<input type="number" min="0" value={equipmentDraft.hours} onChange={(event) => setEquipmentDraft((current) => ({ ...current, hours: Number(event.target.value) }))} /></label><button className="small-primary" type="button" onClick={addEquipment}><Plus size={15} />Adicionar</button></div>}
           <StructuredRows rows={structuredData.equipmentEntries.map((entry) => ({ id: entry.id, main: entry.description, meta: `${entry.quantity} un. / ${entry.hours}h${entry.notes ? ` / ${entry.notes}` : ""}` }))} locked={locked} onRemove={(id) => onChange({ equipmentEntries: structuredData.equipmentEntries.filter((entry) => entry.id !== id) })} />
         </StructuredPanel>
       )}
       {enabledItems.includes("occurrence") && (
-        <StructuredPanel title="Ocorrências">
-          {!locked && <div className="structured-form-row"><select value={occurrenceDraft.catalogItemId} onChange={(event) => setOccurrenceDraft((current) => ({ ...current, catalogItemId: event.target.value }))}>{activeOccurrences.map((item) => <option value={item.id} key={item.id}>{item.description}</option>)}</select><input placeholder="Ou nova ocorrência" value={occurrenceDraft.description} onChange={(event) => setOccurrenceDraft((current) => ({ ...current, description: event.target.value }))} /><select value={occurrenceDraft.severity} onChange={(event) => setOccurrenceDraft((current) => ({ ...current, severity: event.target.value as ReportOccurrenceEntry["severity"] }))}><option value="info">Informativa</option><option value="attention">Atenção</option><option value="critical">Crítica</option></select><button className="small-primary" type="button" onClick={addOccurrence}><Plus size={15} />Adicionar</button></div>}
+        <StructuredPanel title="Ocorrências" hint="Classifique impedimentos, desvios ou alertas registrados no RDO.">
+          {!locked && <div className="structured-form-row"><label>Tipo sugerido<select value={occurrenceDraft.catalogItemId} onChange={(event) => setOccurrenceDraft((current) => ({ ...current, catalogItemId: event.target.value }))}><option value="">Sem sugestao</option>{activeOccurrences.map((item) => <option value={item.id} key={item.id}>{item.description}</option>)}</select></label><label>Nova ocorrencia<input placeholder="Ex: Atraso de fornecedor" value={occurrenceDraft.description} onChange={(event) => setOccurrenceDraft((current) => ({ ...current, description: event.target.value }))} /></label><label>Criticidade<select value={occurrenceDraft.severity} onChange={(event) => setOccurrenceDraft((current) => ({ ...current, severity: event.target.value as ReportOccurrenceEntry["severity"] }))}><option value="info">Informativa</option><option value="attention">Atencao</option><option value="critical">Critica</option></select></label><button className="small-primary" type="button" onClick={addOccurrence}><Plus size={15} />Adicionar</button></div>}
           <StructuredRows rows={structuredData.occurrenceEntries.map((entry) => ({ id: entry.id, main: entry.description, meta: `${occurrenceSeverityLabel(entry.severity)}${entry.notes ? ` / ${entry.notes}` : ""}` }))} locked={locked} onRemove={(id) => onChange({ occurrenceEntries: structuredData.occurrenceEntries.filter((entry) => entry.id !== id) })} />
         </StructuredPanel>
       )}
       {enabledItems.includes("checklist") && (
-        <StructuredPanel title="Checklist">
+        <StructuredPanel title="Checklist" hint="As respostas ficam vinculadas ao RDO e aparecem na analise de dados.">
           <div className="checklist-response-grid">
             {activeChecklists.flatMap((checklist) => checklist.items.map((item) => {
               const existing = structuredData.checklistResponses.find((response) => response.checklistItemId === item.id);
@@ -930,16 +1121,16 @@ function StructuredReportEditor({
           </div>
         </StructuredPanel>
       )}
-      <StructuredPanel title="Lista de tarefas">
-        {!locked && <div className="structured-form-row"><input placeholder="Nova tarefa" value={taskDraft.description} onChange={(event) => setTaskDraft((current) => ({ ...current, description: event.target.value }))} /><select value={taskDraft.status} onChange={(event) => setTaskDraft((current) => ({ ...current, status: event.target.value as ReportTask["status"] }))}><option value="pending">Pendente</option><option value="in_progress">Em andamento</option><option value="completed">Concluída</option></select><input placeholder="Responsável" value={taskDraft.owner} onChange={(event) => setTaskDraft((current) => ({ ...current, owner: event.target.value }))} /><input type="date" value={taskDraft.dueDate} onChange={(event) => setTaskDraft((current) => ({ ...current, dueDate: event.target.value }))} /><button className="small-primary" type="button" onClick={addTask}><Plus size={15} />Adicionar</button></div>}
-        <StructuredRows rows={structuredData.tasks.map((task) => ({ id: task.id, main: task.description, meta: `${taskStatusLabel(task.status)}${task.owner ? ` / ${task.owner}` : ""}${task.dueDate ? ` / ${formatDate(task.dueDate)}` : ""}` }))} locked={locked} onRemove={(id) => onChange({ tasks: structuredData.tasks.filter((task) => task.id !== id) })} />
+      <StructuredPanel title="Lista de tarefas" hint="Pendencias criadas aqui alimentam a aba Analise de dados > Lista de tarefas.">
+        {!locked && <div className="structured-form-row task-form-row"><label>Tarefa<input placeholder="Nova tarefa" value={taskDraft.description} onChange={(event) => setTaskDraft((current) => ({ ...current, description: event.target.value }))} /></label><label>Item do cronograma<input placeholder="Ex: Alvenaria pav. 2" value={taskDraft.scheduleItem} onChange={(event) => setTaskDraft((current) => ({ ...current, scheduleItem: event.target.value }))} /></label><label>Status<select value={taskDraft.status} onChange={(event) => setTaskDraft((current) => ({ ...current, status: event.target.value as ReportTask["status"] }))}><option value="pending">Pendente</option><option value="in_progress">Em andamento</option><option value="completed">Concluida</option></select></label><label>Responsavel<input placeholder="Responsavel" value={taskDraft.owner} onChange={(event) => setTaskDraft((current) => ({ ...current, owner: event.target.value }))} /></label><label>Inicio<input type="date" value={taskDraft.startDate} onChange={(event) => setTaskDraft((current) => ({ ...current, startDate: event.target.value }))} /></label><label>Prazo<input type="date" value={taskDraft.dueDate} onChange={(event) => setTaskDraft((current) => ({ ...current, dueDate: event.target.value }))} /></label><label>% concluido<input type="number" min="0" max="100" value={taskDraft.percentComplete} onChange={(event) => setTaskDraft((current) => ({ ...current, percentComplete: Number(event.target.value) }))} /></label><button className="small-primary" type="button" onClick={addTask}><Plus size={15} />Adicionar</button></div>}
+        <StructuredRows rows={structuredData.tasks.map((task) => ({ id: task.id, main: task.scheduleItem ? `${task.scheduleItem} - ${task.description}` : task.description, meta: `${taskStatusLabel(task.status)} / ${task.percentComplete ?? 0}%${task.owner ? ` / ${task.owner}` : ""}${task.startDate ? ` / Inicio ${formatDate(task.startDate)}` : ""}${task.dueDate ? ` / Prazo ${formatDate(task.dueDate)}` : ""}` }))} locked={locked} onRemove={(id) => onChange({ tasks: structuredData.tasks.filter((task) => task.id !== id) })} />
       </StructuredPanel>
     </div>
   );
 }
 
-function StructuredPanel({ title, children }: { title: string; children: ReactNode }) {
-  return <section className="structured-panel"><h3>{title}</h3>{children}</section>;
+function StructuredPanel({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+  return <section className="structured-panel"><div className="structured-panel-header"><h3>{title}</h3>{hint && <span>{hint}</span>}</div>{children}</section>;
 }
 
 function StructuredRows({ rows, locked, onRemove }: { rows: Array<{ id: string; main: string; meta: string }>; locked: boolean; onRemove: (id: string) => void }) {
@@ -947,7 +1138,7 @@ function StructuredRows({ rows, locked, onRemove }: { rows: Array<{ id: string; 
   return <div className="structured-row-list">{rows.map((row) => <div className="structured-row" key={row.id}><strong>{row.main}</strong><span>{row.meta}</span>{!locked && <button type="button" onClick={() => onRemove(row.id)}><X size={15} /></button>}</div>)}</div>;
 }
 
-function SettingsLayout({ activePage, onNavigate, users, templates, labor, equipment, occurrences, checklists, projects, onOpenModal, onToggleCatalog }: { activePage: Page; onNavigate: (page: Page) => void; users: AppUser[]; templates: ReportTemplate[]; labor: CatalogItem[]; equipment: CatalogItem[]; occurrences: CatalogItem[]; checklists: ChecklistTemplate[]; projects: Project[]; onOpenModal: (modal: ModalState) => void; onToggleCatalog: (kind: CatalogKind, item: CatalogItem, active: boolean) => Promise<void> }) {
+function SettingsLayout({ activePage, onNavigate, users, templates, labor, equipment, occurrences, projectGroups, checklists, projects, onOpenModal, onToggleCatalog }: { activePage: Page; onNavigate: (page: Page) => void; users: AppUser[]; templates: ReportTemplate[]; labor: CatalogItem[]; equipment: CatalogItem[]; occurrences: CatalogItem[]; projectGroups: CatalogItem[]; checklists: ChecklistTemplate[]; projects: Project[]; onOpenModal: (modal: ModalState) => void; onToggleCatalog: (kind: CatalogKind, item: CatalogItem, active: boolean) => Promise<void> }) {
   return (
     <div className="settings-layout">
       <aside className="settings-sidebar">
@@ -960,7 +1151,7 @@ function SettingsLayout({ activePage, onNavigate, users, templates, labor, equip
             item={item}
             activePage={activePage}
             onNavigate={onNavigate}
-            count={item.page === "settings-project-groups" ? new Set(projects.map((project) => project.group)).size : item.page === "settings-templates" ? templates.length : item.page === "settings-labor" ? labor.length : item.page === "settings-equipment" ? equipment.length : item.page === "settings-occurrences" ? occurrences.length : item.page === "settings-checklist" ? checklists.length : undefined}
+            count={item.page === "settings-project-groups" ? projectGroups.length : item.page === "settings-templates" ? templates.length : item.page === "settings-labor" ? labor.length : item.page === "settings-equipment" ? equipment.length : item.page === "settings-occurrences" ? occurrences.length : item.page === "settings-checklist" ? checklists.length : undefined}
           />
         ))}
         <span className="sidebar-title">Editar obra</span>
@@ -980,7 +1171,7 @@ function SettingsLayout({ activePage, onNavigate, users, templates, labor, equip
         ) : activePage === "settings-checklist" ? (
           <ChecklistSettings checklists={checklists} onOpenModal={onOpenModal} />
         ) : activePage === "settings-project-groups" ? (
-          <ProjectGroupsSettings projects={projects} />
+          <CatalogSettings title="Grupos de obras" kind="project-groups" icon={Briefcase} items={projectGroups} onOpenModal={onOpenModal} onToggleCatalog={onToggleCatalog} />
         ) : activePage === "settings-company" ? (
           <CompanySettings />
         ) : activePage === "settings-project-labor" ? (
@@ -998,6 +1189,7 @@ function SettingsLayout({ activePage, onNavigate, users, templates, labor, equip
 function AppModal(props: {
   modal: ModalState;
   projects: Project[];
+  projectGroups: CatalogItem[];
   templates: ReportTemplate[];
   onClose: () => void;
   onCreateProject: (payload: CreateProjectPayload) => Promise<void>;
@@ -1010,8 +1202,8 @@ function AppModal(props: {
 }) {
   const { modal, onClose } = props;
   if (!modal) return null;
-  if (modal.type === "project-create") return <ProjectModal title="Adicionar obra" onClose={onClose} onSave={props.onCreateProject} />;
-  if (modal.type === "project-edit") return <ProjectModal title="Editar obra" project={modal.project} onClose={onClose} onSave={(payload) => props.onUpdateProject(modal.project.id, payload)} />;
+  if (modal.type === "project-create") return <ProjectModal title="Adicionar obra" projectGroups={props.projectGroups} onClose={onClose} onSave={props.onCreateProject} />;
+  if (modal.type === "project-edit") return <ProjectModal title="Editar obra" project={modal.project} projectGroups={props.projectGroups} onClose={onClose} onSave={(payload) => props.onUpdateProject(modal.project.id, payload)} />;
   if (modal.type === "report-create") return <AddReportModal projects={props.projects} templates={props.templates} defaultProjectId={props.projects[0]?.id ?? ""} onClose={onClose} onSave={props.onCreateReport} />;
   if (modal.type === "user") return <UserModal user={modal.user} onClose={onClose} onSave={(payload) => props.onSaveUser(payload, modal.user)} />;
   if (modal.type === "template") return <ReportTemplateModal template={modal.template} onClose={onClose} onSave={(payload) => props.onSaveTemplate(payload, modal.template)} />;
@@ -1020,7 +1212,7 @@ function AppModal(props: {
   if (modal.type === "signature") return <SignatureModal onClose={onClose} />;
 }
 
-function ProjectModal({ title, project, onClose, onSave }: { title: string; project?: Project; onClose: () => void; onSave: (payload: CreateProjectPayload) => Promise<void> }) {
+function ProjectModal({ title, project, projectGroups, onClose, onSave }: { title: string; project?: Project; projectGroups: CatalogItem[]; onClose: () => void; onSave: (payload: CreateProjectPayload) => Promise<void> }) {
   const [mode, setMode] = useState<"complete" | "simple">("complete");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -1039,6 +1231,10 @@ function ProjectModal({ title, project, onClose, onSave }: { title: string; proj
     requirePhotos: project?.requirePhotos ?? false
   });
 
+  const activeProjectGroups = projectGroups.filter((group) => group.status === "active");
+  const groupOptions = activeProjectGroups.some((group) => group.description === form.group)
+    ? activeProjectGroups
+    : [{ id: "current-project-group", description: form.group || "Todas as obras", status: "active", sourceType: "customized" } as CatalogItem, ...activeProjectGroups];
   const update = <K extends keyof CreateProjectPayload>(key: K, value: CreateProjectPayload[K]) => setForm((current) => ({ ...current, [key]: value }));
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -1072,7 +1268,7 @@ function ProjectModal({ title, project, onClose, onSave }: { title: string; proj
             <Field label="Contratante" value={form.contractor ?? ""} onChange={(value) => update("contractor", value)} placeholder="Ex: Prefeitura" />
             <Field label="Data de início" value={form.startDate ?? ""} onChange={(value) => update("startDate", value)} type="date" />
             <Field label="Fim previsto" value={form.expectedEndDate ?? ""} onChange={(value) => update("expectedEndDate", value)} type="date" />
-            <Field label="Grupo" value={form.group} onChange={(value) => update("group", value)} />
+            <SelectField label="Grupo" value={form.group} onChange={(value) => update("group", value)} options={groupOptions.map((group) => [group.description, group.description])} />
             <Field label="Contrato" value={form.contract ?? ""} onChange={(value) => update("contract", value)} placeholder="Número do contrato" />
             <SelectField label="Status" value={form.status} onChange={(value) => update("status", value as ProjectStatus)} options={[["in_progress", "Em andamento"], ["not_started", "Não iniciado"], ["stalled", "Paralisado"], ["completed", "Concluído"]]} />
           </div>
@@ -1080,7 +1276,7 @@ function ProjectModal({ title, project, onClose, onSave }: { title: string; proj
         {mode === "simple" && (
           <div className="form-grid simple">
             <SelectField label="Status" value={form.status} onChange={(value) => update("status", value as ProjectStatus)} options={[["in_progress", "Em andamento"], ["not_started", "Não iniciado"], ["stalled", "Paralisado"], ["completed", "Concluído"]]} />
-            <Field label="Grupo" value={form.group} onChange={(value) => update("group", value)} />
+            <SelectField label="Grupo" value={form.group} onChange={(value) => update("group", value)} options={groupOptions.map((group) => [group.description, group.description])} />
           </div>
         )}
         <label>Endereço</label>
@@ -1305,6 +1501,16 @@ function UsersSettings({ users, onOpenModal }: { users: AppUser[]; onOpenModal: 
         <h2>Usuários de acesso</h2>
         {visibleUsers.map((user) => <div className="user-row" key={user.id}><span className="avatar">{initials(user.name)}</span><strong>{user.name}</strong><span>{user.email}</span><span>{accessProfileLabel(user.accessProfile)}</span><span className={`badge ${user.status === "active" ? "green" : "gray"}`}>{user.status === "active" ? "Ativo" : "Inativo"}</span><button onClick={() => onOpenModal({ type: "user", user })}><Edit3 size={17} /></button></div>)}
       </section>
+      <section className="panel access-policy-panel">
+        <div className="panel-header"><h2>Modelo de acesso planejado</h2><span className="badge gray">autenticação pendente</span></div>
+        <div className="access-policy-grid">
+          <span><strong>Administrador</strong> configura cadastros, usuários, obras, aprovações e auditoria.</span>
+          <span><strong>Campo</strong> preenche RDO, tarefas, fotos e ocorrências sem aprovar.</span>
+          <span><strong>Revisor/Aprovador</strong> revisa, aprova, assina e bloqueia o relatório.</span>
+          <span><strong>Cliente leitura</strong> consulta obras, fotos, PDFs e histórico aprovado.</span>
+        </div>
+        <p className="muted-text">Login/senha, sessão, permissões por rota, menu de logout real e trilha de autenticação entram no próximo pacote de segurança.</p>
+      </section>
     </section>
   );
 }
@@ -1334,6 +1540,7 @@ function CatalogSettings({ title, kind, icon: Icon, items, onOpenModal, onToggle
         <div className="table-list">
           {visibleItems.map((item) => <div className="table-row" key={item.id}><Icon size={16} /><label className="catalog-toggle"><input type="checkbox" checked={item.status === "active"} onChange={(event) => void onToggleCatalog(kind, item, event.target.checked)} /> {item.description}</label><span>{item.group ?? ""}</span><button onClick={() => onOpenModal({ type: "catalog", kind, item })}><Edit3 size={16} /></button></div>)}
         </div>
+        {visibleItems.length === 0 && <EmptyState icon={Icon} title="Nenhum item encontrado" text="Ajuste a busca, o status ou adicione uma nova sugestao de cadastro." />}
       </section>
     </section>
   );
@@ -1373,48 +1580,146 @@ function ProjectPredefineSettings({ title, projects, items }: { title: string; p
   return <section className="page-inner"><section className="panel"><h2>{title}</h2><p className="muted-text">Selecione uma obra e use os cadastros ativos como lista padrão do relatório. A persistência por obra entra na próxima etapa de regras de obra.</p><select value={projectId} onChange={(event) => setProjectId(event.target.value)}>{projects.map((project) => <option value={project.id} key={project.id}>{project.name}</option>)}</select><div className="parameter-list">{items.slice(0, 12).map((item) => <label key={item.id}><input type="checkbox" checked={selectedIds.includes(item.id)} onChange={() => toggleItem(item.id)} /> {item.description}</label>)}</div><button className="save-button" onClick={() => setSavedAt(new Date().toLocaleTimeString("pt-BR"))}><Save size={17} />Salvar seleção</button>{savedAt && <span className="muted-text">Seleção aplicada localmente às {savedAt}.</span>}</section></section>;
 }
 
-function AnalysisPage({ view, reports, projects, onOpenReport }: { view: Page; reports: Report[]; projects: Project[]; onOpenReport: (reportId: string) => void }) {
+function AnalysisPage({ view, reports, projects, onOpenReport, onNavigate }: { view: Page; reports: Report[]; projects: Project[]; onOpenReport: (reportId: string) => void; onNavigate: (page: Page) => void }) {
+  const [query, setQuery] = useState("");
+  const [projectId, setProjectId] = useState("all");
+  const [status, setStatus] = useState("all");
+  const [dataType, setDataType] = useState("all");
   const taskRows = reports.flatMap((report) => report.structuredData.tasks.map((task) => ({ report, task })));
   const insertedRows = reports.flatMap((report) => [
     ...report.structuredData.laborEntries.map((entry) => ({ report, type: "Mão de obra", description: entry.description, value: `${entry.quantity} ${entry.unit}` })),
     ...report.structuredData.equipmentEntries.map((entry) => ({ report, type: "Equipamento", description: entry.description, value: `${entry.quantity} un. / ${entry.hours}h` })),
     ...report.structuredData.occurrenceEntries.map((entry) => ({ report, type: "Ocorrência", description: entry.description, value: occurrenceSeverityLabel(entry.severity) })),
-    ...report.structuredData.checklistResponses.map((entry) => ({ report, type: "Checklist", description: entry.question, value: entry.answer }))
+    ...report.structuredData.checklistResponses.map((entry) => ({ report, type: "Checklist", description: entry.question, value: entry.answer })),
+    ...report.structuredData.tasks.map((task) => ({ report, type: "Tarefa", description: task.scheduleItem ? `${task.scheduleItem} - ${task.description}` : task.description, value: `${taskStatusLabel(task.status)} / ${task.percentComplete ?? 0}%` }))
   ]);
-  const pendingReports = reports.filter((report) => report.status === "draft" || report.status === "revised" || hasMissingStructuredData(report));
+  const filteredReports = reports.filter((report) => {
+    const project = projectName(projects, report.projectId);
+    const structuredText = [
+      ...report.structuredData.laborEntries.map((entry) => entry.description),
+      ...report.structuredData.equipmentEntries.map((entry) => entry.description),
+      ...report.structuredData.occurrenceEntries.map((entry) => entry.description),
+      ...report.structuredData.checklistResponses.map((entry) => entry.question),
+      ...report.structuredData.tasks.map((task) => task.description)
+    ].join(" ");
+    return (projectId === "all" || report.projectId === projectId) && (status === "all" || report.status === status) && matchesQuery([`RDO ${report.number}`, report.reportDate, report.creatorName, project, structuredText], query);
+  });
+  const visibleReportIds = new Set(filteredReports.map((report) => report.id));
+  const pendingReports = filteredReports.filter((report) => report.status === "draft" || report.status === "revised" || hasMissingStructuredData(report));
+  const filteredTaskRows = taskRows.filter(({ report, task }) => visibleReportIds.has(report.id) && matchesQuery([task.description, task.owner, task.status, projectName(projects, report.projectId)], query));
+  const filteredInsertedRows = insertedRows.filter((row) => visibleReportIds.has(row.report.id) && (dataType === "all" || row.type === dataType) && matchesQuery([row.type, row.description, row.value, projectName(projects, row.report.projectId)], query));
+  const today = new Date().toISOString().slice(0, 10);
+  const openTaskRows = filteredTaskRows.filter(({ task }) => task.status !== "completed");
+  const overdueTaskRows = openTaskRows.filter(({ task }) => Boolean(task.dueDate) && task.dueDate < today);
+  const lowProgressRows = openTaskRows.filter(({ task }) => (task.percentComplete ?? 0) < 50);
+  const criticalOccurrenceRows = filteredReports.flatMap((report) => report.structuredData.occurrenceEntries.filter((entry) => entry.severity === "critical" || entry.severity === "attention").map((entry) => ({ report, entry })));
+  const reviewReports = filteredReports.filter((report) => report.status === "pending_review");
+  const approvedReports = filteredReports.filter((report) => report.status === "approved");
+  const auditRows = [
+    { label: "Tarefas atrasadas", value: overdueTaskRows.length, total: Math.max(openTaskRows.length, 1), tone: overdueTaskRows.length > 0 ? "danger" : "ok", target: "analysis-tasks" as Page },
+    { label: "Tarefas com baixo avanço", value: lowProgressRows.length, total: Math.max(openTaskRows.length, 1), tone: lowProgressRows.length > 0 ? "warning" : "ok", target: "analysis-tasks" as Page },
+    { label: "Ocorrências críticas/atenção", value: criticalOccurrenceRows.length, total: Math.max(filteredReports.length, 1), tone: criticalOccurrenceRows.length > 0 ? "danger" : "ok", target: "analysis-inserted" as Page },
+    { label: "RDOs aguardando revisão", value: reviewReports.length, total: Math.max(filteredReports.length, 1), tone: reviewReports.length > 0 ? "warning" : "ok", target: "analysis-created" as Page },
+    { label: "RDOs aprovados e imutáveis", value: approvedReports.length, total: Math.max(filteredReports.length, 1), tone: "ok", target: "analysis-created" as Page }
+  ];
+  const filterBar = <AnalysisFilters projects={projects} query={query} onQueryChange={setQuery} projectId={projectId} onProjectChange={setProjectId} status={status} onStatusChange={setStatus} dataType={dataType} onDataTypeChange={setDataType} showDataType={view === "analysis-inserted" || view === "analysis"} />;
 
   if (view === "analysis-created") {
-    return <AnalysisShell title="Relatórios criados"><ReportList reports={reports} onOpenReport={onOpenReport} /></AnalysisShell>;
+    return <AnalysisShell title="Relatórios criados">{filterBar}{filteredReports.length > 0 ? <ReportList reports={filteredReports} onOpenReport={onOpenReport} /> : <EmptyState icon={FileText} title="Nenhum relatório encontrado" text="Ajuste os filtros para localizar outro RDO." />}</AnalysisShell>;
   }
 
   if (view === "analysis-pending") {
-    return <AnalysisShell title="Aguardando informações">{pendingReports.length > 0 ? <ReportList reports={pendingReports} onOpenReport={onOpenReport} /> : <EmptyState icon={ClipboardList} title="Nada pendente" text="Todos os RDOs possuem dados mínimos ou já seguiram para revisão." />}</AnalysisShell>;
+    return <AnalysisShell title="Aguardando informações">{filterBar}{pendingReports.length > 0 ? <ReportList reports={pendingReports} onOpenReport={onOpenReport} /> : <EmptyState icon={ClipboardList} title="Nada pendente" text="Todos os RDOs filtrados possuem dados mínimos ou já seguiram para revisão." />}</AnalysisShell>;
   }
 
   if (view === "analysis-tasks") {
-    return <AnalysisShell title="Lista de tarefas"><div className="analysis-table">{taskRows.map(({ report, task }) => <div className="analysis-row" key={task.id}><span>RDO #{report.number}</span><strong>{task.description}</strong><span>{taskStatusLabel(task.status)}</span><span>{task.owner || "-"}</span><span>{task.dueDate ? formatDate(task.dueDate) : "-"}</span></div>)}</div>{taskRows.length === 0 && <EmptyState icon={ListChecks} title="Nenhuma tarefa" text="As tarefas adicionadas nos RDOs aparecerão aqui." />}</AnalysisShell>;
+    return <AnalysisShell title="Lista de tarefas">{filterBar}<div className="analysis-table">{filteredTaskRows.map(({ report, task }) => <button className="analysis-row clickable" key={task.id} onClick={() => onOpenReport(report.id)}><span>RDO #{report.number}</span><strong>{task.scheduleItem || task.description}</strong><span>{task.description}</span><span>{taskStatusLabel(task.status)} / {task.percentComplete ?? 0}%</span><span>{task.owner || "-"}</span><span>{task.startDate ? formatDate(task.startDate) : "-"} ate {task.dueDate ? formatDate(task.dueDate) : "-"}</span></button>)}</div>{filteredTaskRows.length === 0 && <EmptyState icon={ListChecks} title="Nenhuma tarefa" text="As tarefas adicionadas nos RDOs aparecerão aqui quando passarem pelos filtros." />}</AnalysisShell>;
   }
 
   if (view === "analysis-inserted") {
-    return <AnalysisShell title="Dados inseridos nos relatórios"><div className="analysis-table">{insertedRows.map((row, index) => <div className="analysis-row" key={`${row.report.id}-${row.type}-${index}`}><span>RDO #{row.report.number}</span><strong>{row.type}</strong><span>{row.description}</span><span>{row.value}</span><span>{projectName(projects, row.report.projectId)}</span></div>)}</div>{insertedRows.length === 0 && <EmptyState icon={BarChart3} title="Sem dados estruturados" text="Adicione mão de obra, equipamentos, ocorrências ou checklist em um RDO." />}</AnalysisShell>;
+    return <AnalysisShell title="Dados inseridos nos relatórios">{filterBar}<div className="analysis-table">{filteredInsertedRows.map((row, index) => <button className="analysis-row clickable" key={`${row.report.id}-${row.type}-${index}`} onClick={() => onOpenReport(row.report.id)}><span>RDO #{row.report.number}</span><strong>{row.type}</strong><span>{row.description}</span><span>{row.value}</span><span>{projectName(projects, row.report.projectId)}</span></button>)}</div>{filteredInsertedRows.length === 0 && <EmptyState icon={BarChart3} title="Sem dados estruturados" text="Adicione mão de obra, equipamentos, ocorrências ou checklist em um RDO ou ajuste os filtros." />}</AnalysisShell>;
   }
 
   return (
     <section className="page wide">
       <h1>Análise de dados</h1>
+      {filterBar}
       <div className="dashboard-grid">
-        <Metric title="Visão geral" value={String(projects.length)} />
-        <Metric title="Relatórios criados" value={String(reports.length)} />
-        <Metric title="Aguardando informações" value={String(pendingReports.length)} />
-        <Metric title="Lista de tarefas" value={String(taskRows.filter(({ task }) => task.status !== "completed").length)} />
-        <Metric title="Mão de obra lançada" value={String(reports.reduce((total, report) => total + report.structuredData.laborEntries.length, 0))} />
-        <Metric title="Ocorrências" value={String(reports.reduce((total, report) => total + report.structuredData.occurrenceEntries.length, 0))} />
+        <Metric title="Visão geral" value={String(projectId === "all" ? projects.length : 1)} />
+        <Metric title="Relatórios criados" value={String(filteredReports.length)} onClick={() => onNavigate("analysis-created")} />
+        <Metric title="Aguardando informações" value={String(pendingReports.length)} onClick={() => onNavigate("analysis-pending")} />
+        <Metric title="Lista de tarefas" value={String(openTaskRows.length)} onClick={() => onNavigate("analysis-tasks")} />
+        <Metric title="Mão de obra lançada" value={String(filteredReports.reduce((total, report) => total + report.structuredData.laborEntries.length, 0))} onClick={() => onNavigate("analysis-inserted")} />
+        <Metric title="Ocorrências" value={String(filteredReports.reduce((total, report) => total + report.structuredData.occurrenceEntries.length, 0))} onClick={() => onNavigate("analysis-inserted")} />
       </div>
       <section className="panel">
-        <div className="panel-header"><h2>Dados inseridos nos relatórios</h2><span className="badge gray">{insertedRows.length} registros</span></div>
-        <div className="analysis-table">{insertedRows.slice(0, 8).map((row, index) => <div className="analysis-row" key={`${row.report.id}-${row.type}-${index}`}><span>RDO #{row.report.number}</span><strong>{row.type}</strong><span>{row.description}</span><span>{row.value}</span><span>{projectName(projects, row.report.projectId)}</span></div>)}</div>
+        <div className="panel-header"><h2>Auditoria e gestão de risco</h2><span className="badge gray">{filteredReports.length} RDOs filtrados</span></div>
+        <div className="risk-grid">
+          {auditRows.map((row) => <RiskGauge key={row.label} label={row.label} value={row.value} total={row.total} tone={row.tone} onClick={() => onNavigate(row.target)} />)}
+        </div>
+        <div className="audit-insights">
+          <button type="button" onClick={() => overdueTaskRows[0] && onOpenReport(overdueTaskRows[0].report.id)} disabled={overdueTaskRows.length === 0}>Primeira tarefa atrasada: {overdueTaskRows[0]?.task.description ?? "nenhuma"}</button>
+          <button type="button" onClick={() => criticalOccurrenceRows[0] && onOpenReport(criticalOccurrenceRows[0].report.id)} disabled={criticalOccurrenceRows.length === 0}>Primeira ocorrência relevante: {criticalOccurrenceRows[0]?.entry.description ?? "nenhuma"}</button>
+        </div>
+      </section>
+      <section className="panel">
+        <div className="panel-header"><h2>Dados inseridos nos relatórios</h2><span className="badge gray">{filteredInsertedRows.length} registros</span></div>
+        <div className="analysis-table">{filteredInsertedRows.slice(0, 8).map((row, index) => <button className="analysis-row clickable" key={`${row.report.id}-${row.type}-${index}`} onClick={() => onOpenReport(row.report.id)}><span>RDO #{row.report.number}</span><strong>{row.type}</strong><span>{row.description}</span><span>{row.value}</span><span>{projectName(projects, row.report.projectId)}</span></button>)}</div>
       </section>
     </section>
+  );
+}
+
+function AnalysisFilters({
+  projects,
+  query,
+  onQueryChange,
+  projectId,
+  onProjectChange,
+  status,
+  onStatusChange,
+  dataType,
+  onDataTypeChange,
+  showDataType
+}: {
+  projects: Project[];
+  query: string;
+  onQueryChange: (value: string) => void;
+  projectId: string;
+  onProjectChange: (value: string) => void;
+  status: string;
+  onStatusChange: (value: string) => void;
+  dataType: string;
+  onDataTypeChange: (value: string) => void;
+  showDataType: boolean;
+}) {
+  return (
+    <div className="analysis-filters">
+      <IconInput icon={Search} placeholder="Buscar por RDO, obra, pessoa ou dado lançado" value={query} onChange={onQueryChange} />
+      <select value={projectId} onChange={(event) => onProjectChange(event.target.value)}>
+        <option value="all">Todas as obras</option>
+        {projects.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}
+      </select>
+      <select value={status} onChange={(event) => onStatusChange(event.target.value)}>
+        <option value="all">Todos os status</option>
+        <option value="draft">Rascunho</option>
+        <option value="pending_review">Em revisão</option>
+        <option value="approved">Aprovado</option>
+        <option value="rejected">Rejeitado</option>
+        <option value="revised">Revisado</option>
+        <option value="amended">Retificado</option>
+      </select>
+      {showDataType && (
+        <select value={dataType} onChange={(event) => onDataTypeChange(event.target.value)}>
+          <option value="all">Todos os dados</option>
+          <option value="Mão de obra">Mão de obra</option>
+          <option value="Equipamento">Equipamento</option>
+          <option value="Ocorrência">Ocorrência</option>
+          <option value="Checklist">Checklist</option>
+          <option value="Tarefa">Tarefa</option>
+        </select>
+      )}
+    </div>
   );
 }
 
@@ -1499,8 +1804,22 @@ function Info({ label, value, badge, progress }: { label: string; value: string;
   return <div className="info-item"><span>{label}</span>{progress && <div className="progress-bar"><i /></div>}{badge ? <strong className="badge blue">{value}</strong> : <strong>{value}</strong>}</div>;
 }
 
-function Metric({ title, value }: { title: string; value: string }) {
+function Metric({ title, value, onClick }: { title: string; value: string; onClick?: () => void }) {
+  if (onClick) {
+    return <button type="button" className="metric-card metric-button" onClick={onClick}><strong>{value}</strong><span>{title}</span></button>;
+  }
   return <article className="metric-card"><strong>{value}</strong><span>{title}</span></article>;
+}
+
+function RiskGauge({ label, value, total, tone, onClick }: { label: string; value: number; total: number; tone: string; onClick: () => void }) {
+  const percent = Math.min(100, Math.round((value / Math.max(total, 1)) * 100));
+  return (
+    <button type="button" className={`risk-gauge ${tone}`} onClick={onClick}>
+      <div><strong>{value}</strong><span>{label}</span></div>
+      <div className="risk-track"><span style={{ width: `${percent}%` }} /></div>
+      <small>{percent}% da base filtrada</small>
+    </button>
+  );
 }
 
 function TimelineItem({ label, value, done }: { label: string; value: string; done: boolean }) {
@@ -1546,6 +1865,7 @@ function accessProfileLabel(profile: AccessProfile) {
 }
 
 function catalogKindLabel(kind: CatalogKind) {
+  if (kind === "project-groups") return "Grupo de obras";
   return kind === "labor" ? "Mão de obra" : kind === "equipment" ? "Equipamento" : "Tipo de ocorrência";
 }
 
@@ -1561,6 +1881,15 @@ function taskStatusLabel(status: ReportTask["status"]) {
 
 function makeLocalId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error ?? new Error("Não foi possível ler o arquivo."));
+    reader.readAsDataURL(file);
+  });
 }
 
 function hasMissingStructuredData(report: Report) {

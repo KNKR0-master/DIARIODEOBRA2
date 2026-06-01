@@ -262,6 +262,17 @@ Stage 2 extends this with a local persisted data layer:
 - Persistent projects, report templates, catalogs, checklists, reports, report sections, PDF version placeholders, and audit logs.
 - Report audit history visible in the RDO detail screen.
 
+Stage 4 adds flow refinements before PDF and WhatsApp:
+
+- Project groups are real pre-registration records and feed the project creation/edit dropdown.
+- Analysis and registration top navigation use dropdown menus only.
+- RDO detail opens as a readable, audit-friendly summary when it is no longer a draft.
+- Report photos and attachments are stored as report-linked evidence and surfaced in project recent photos.
+- Task records now include schedule item, start date, due date, owner, status, and percent complete so task lists can support work planning and risk monitoring.
+- Report photos and attachments can be linked to a specific task while still remaining visible in the full RDO evidence gallery.
+- Analysis dashboards now prioritize audit and risk indicators: overdue tasks, low-progress tasks, critical/attention occurrences, RDOs waiting for review, and approved immutable RDOs.
+- Authentication is recorded as a required security stage: login, password/session handling, permission enforcement, role-aware navigation, profile actions, and logout must replace the current static user context before production use.
+
 ## Future Scope
 
 - Photo analysis.
@@ -284,3 +295,4 @@ Stage 2 extends this with a local persisted data layer:
 - Signature and trust: resolved. Store virtual signature, user ID, user name, creation date/time, approval date/time, hash/checksum, and approved PDF version.
 - Photos: resolved for MVP. Photos are optional, with admin configuration to make them required by company, project, or template later.
 - PDF generation: resolved. Required after report approval in the MVP.
+- Login/logout: open. The current user chip is static. Add real authentication, session persistence, password policy/recovery, role-aware navigation, and a top-right account menu with logout.

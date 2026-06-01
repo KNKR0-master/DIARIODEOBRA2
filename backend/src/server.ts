@@ -8,11 +8,11 @@ export async function buildServer() {
   });
 
   await app.register(cors, {
-    origin: true
+    origin: true,
+    methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"]
   });
 
   await registerRoutes(app);
 
   return app;
 }
-

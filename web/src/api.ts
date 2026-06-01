@@ -101,7 +101,10 @@ export interface ReportTask {
   description: string;
   status: "pending" | "in_progress" | "completed";
   owner: string;
+  scheduleItem: string;
+  startDate: string;
   dueDate: string;
+  percentComplete: number;
 }
 
 export interface ReportStructuredData {
@@ -110,6 +113,22 @@ export interface ReportStructuredData {
   occurrenceEntries: ReportOccurrenceEntry[];
   checklistResponses: ReportChecklistResponse[];
   tasks: ReportTask[];
+}
+
+export interface ReportAttachment {
+  id: string;
+  reportId: string;
+  projectId: string;
+  fileName: string;
+  mimeType: string;
+  attachmentType: "photo" | "video" | "document";
+  source: "local_upload" | "whatsapp";
+  taskId?: string;
+  dataUrl: string;
+  caption: string;
+  createdAt: string;
+  createdByUserId: string;
+  createdByName: string;
 }
 
 export interface Report {
@@ -234,6 +253,16 @@ export interface UpdateReportPayload {
   structuredData?: ReportStructuredData;
 }
 
+export interface AttachmentPayload {
+  fileName: string;
+  mimeType: string;
+  attachmentType: "photo" | "video" | "document";
+  source: "local_upload" | "whatsapp";
+  taskId?: string;
+  dataUrl: string;
+  caption: string;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     headers: {
@@ -265,7 +294,7 @@ export const api = {
   },
 
   async getProjectOverview(id: string) {
-    return request<{ project: Project; counters: { reports: number; activities: number; occurrences: number; comments: number; photos: number; videos: number }; recentReports: Report[]; recentPhotos: string[] }>(`/api/projects/${id}/overview`);
+    return request<{ project: Project; counters: { reports: number; activities: number; occurrences: number; comments: number; photos: number; videos: number }; recentReports: Report[]; recentPhotos: ReportAttachment[] }>(`/api/projects/${id}/overview`);
   },
 
   async getReports(projectId?: string) {
@@ -364,18 +393,33 @@ export const api = {
     return request<{ occurrenceTypes: CatalogItem[] }>("/api/catalogs/occurrence-types");
   },
 
+  async getReportAttachments(id: string) {
+    return request<{ attachments: ReportAttachment[] }>(`/api/reports/${id}/attachments`);
+  },
+
+  async createReportAttachment(id: string, payload: AttachmentPayload) {
+    return request<{ attachment: ReportAttachment }>(`/api/reports/${id}/attachments`, {
+      method: "POST",
+      body: JSON.stringify(payload)
+    });
+  },
+
+  async getProjectGroups() {
+    return request<{ projectGroups: CatalogItem[] }>("/api/catalogs/project-groups");
+  },
+
   async getChecklists() {
     return request<{ checklists: ChecklistTemplate[] }>("/api/catalogs/checklists");
   },
 
-  async createCatalogItem(kind: "labor" | "equipment" | "occurrences", payload: CatalogItemPayload) {
+  async createCatalogItem(kind: "labor" | "equipment" | "occurrences" | "project-groups", payload: CatalogItemPayload) {
     return request<{ item: CatalogItem }>(`/api/catalogs/items/${kind}`, {
       method: "POST",
       body: JSON.stringify(payload)
     });
   },
 
-  async updateCatalogItem(kind: "labor" | "equipment" | "occurrences", id: string, payload: CatalogItemPayload) {
+  async updateCatalogItem(kind: "labor" | "equipment" | "occurrences" | "project-groups", id: string, payload: CatalogItemPayload) {
     return request<{ item: CatalogItem }>(`/api/catalogs/items/${kind}/${id}`, {
       method: "PATCH",
       body: JSON.stringify(payload)
