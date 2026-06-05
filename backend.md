@@ -35,6 +35,8 @@ Fields:
 - Responsible.
 - Contractor/client.
 - Address.
+- Latitude.
+- Longitude.
 - Start date.
 - Expected end date.
 - Contract number.
@@ -103,13 +105,34 @@ The RDO stores operational fields in normalized tables instead of only text bloc
 
 Structured tables:
 
-- Report labor entries: catalog suggestion, description, quantity, unit, notes.
+- Report labor entries: catalog suggestion, description, quantity, unit, source type, service provider, notes.
 - Report equipment entries: catalog suggestion, description, quantity, hours, notes.
 - Report occurrence entries: occurrence type suggestion, severity, notes.
 - Report checklist responses: checklist item, answer, compliance flag, notes.
 - Report tasks: action description, status, owner, due date.
 
 Catalog items remain reusable suggestions. Labor and equipment suggestions can be active or inactive so each company can keep only the options it uses while still adding custom functions, equipment, and categories.
+
+Current labor behavior:
+
+- Labor entries are copied between reports as structured records.
+- Inserted labor entries can be edited only after the frontend user clicks the pencil icon.
+- Function selection is dropdown-based and can include catalog suggestions plus report-local custom functions.
+- `sourceType` distinguishes own labor (`own`) from outsourced labor (`outsourced`).
+- `serviceProvider` stores the outsourced company name when applicable.
+
+### Weather Automation
+
+Projects store latitude and longitude so RDO weather can be suggested automatically.
+
+Current behavior:
+
+- `GET /api/projects/:id/weather?date=YYYY-MM-DD` calls Open-Meteo.
+- The backend requests hourly weather code, cloud cover, precipitation, and daily precipitation sum.
+- The response is mapped to the RDO climate structure: Tempo, Condições de Trabalho, and Índice Pluviométrico.
+- Coordinates are required and must be within valid latitude/longitude ranges.
+- The Open-Meteo request has a timeout and returns a controlled error when unavailable.
+- The frontend shows the data as a suggestion and asks the user to validate it against real jobsite conditions.
 
 ### Inbound Message
 
@@ -278,7 +301,7 @@ MVP behavior:
 
 ## First Implemented Backend Workflow
 
-The first functional backend workflow is in-memory and supports:
+The first functional backend workflow now uses SQLite persistence and supports:
 
 - Creating a project.
 - Listing projects and project overview counters.
@@ -293,6 +316,7 @@ The first functional backend workflow is in-memory and supports:
 - Blocking edits to approved reports with HTTP `409`.
 
 The next backend stage should move reports, projects, templates, users, signatures, and audit events from seed arrays to a database-backed persistence layer.
+This move has been completed for the current local prototype. The next persistence step is a formal migration/versioning framework for production database evolution.
 
 ## Stage 2 Persistence Baseline
 
@@ -309,7 +333,25 @@ Implemented:
 
 Still pending in Stage 2:
 
-- Real authentication/session handling.
-- Full role permission enforcement.
 - Real PDF file generation and storage.
 - Migration/versioning framework for production database evolution.
+
+## Current Security Baseline
+
+Implemented:
+
+- Argon2id password hashes.
+- HttpOnly session cookie with only the session hash stored in SQLite.
+- Same-site CSRF token stored as a readable cookie and required as `X-CSRF-Token` on mutating requests.
+- Role checks for user management, settings/project management, approval/rejection, and read-only clients.
+- CORS restricted to known local origins or the comma-separated `CORS_ORIGIN` environment variable.
+- Development admin fallback password is `Jonas123`; production requires `DEFAULT_ADMIN_PASSWORD`.
+- State-changing routes require authentication and CSRF protection.
+- Attachment payloads have a size cap.
+
+Pending:
+
+- Password recovery.
+- Persistent login rate limiting beyond the current in-memory guard.
+- Per-project permissions.
+- More granular route-aware UI states.

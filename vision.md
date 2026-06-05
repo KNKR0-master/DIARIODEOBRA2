@@ -18,6 +18,7 @@ Managers should have dashboards that show execution status, workforce, blockers,
 
 - Field-first: reporting must be fast for people at the jobsite.
 - Human-confirmed: AI can draft reports, but uncertain information must be reviewed.
+- Suggested, not assumed: external data such as weather can prefill a report, but jobsite reality must be validated by the user.
 - Evidence-based: every structured report should keep links to source messages, audio, photos, and documents.
 - Searchable history: past reports should be easy to find and question.
 - Operational clarity: dashboards should help decisions, not just display charts.

@@ -39,6 +39,8 @@ Responsibilities:
 - Create draft reports.
 - Attach original messages and media.
 - Mark missing or uncertain fields.
+- Populate structured climate, labor, equipment, occurrence, checklist, task, and evidence fields when enough information is available.
+- Preserve labor source details such as own/outsourced classification and service provider when stated by the user.
 
 ### Clarification Agent
 
@@ -73,6 +75,7 @@ Responsibilities:
 - Suggest corrections.
 - Compare report content with previous updates.
 - Prepare approval summaries.
+- Highlight automatically suggested weather data so the reviewer validates it against actual jobsite conditions.
 
 ### Dashboard Agent
 

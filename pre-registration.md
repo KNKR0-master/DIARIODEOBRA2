@@ -109,6 +109,15 @@ Actions:
 - Delete.
 - Import/export later.
 
+Report entry behavior:
+
+- The global labor list provides reusable function options for RDO entries.
+- Users can choose "Outra" in the RDO editor to type a new function.
+- Custom functions inserted in the current report are added to the function dropdown for later edits in the same report.
+- Historical RDO labor entries must preserve their description even if the catalog item is later deactivated or renamed.
+- Each report labor entry can be classified as Própria or Terceirizada.
+- Terceirizada entries can store the service provider company name.
+
 ## Equipment List
 
 Purpose: reusable catalog of equipment used in construction reports.

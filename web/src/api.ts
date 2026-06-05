@@ -28,6 +28,8 @@ export interface Project {
   contractor: string;
   contract: string;
   address: string;
+  latitude: string;
+  longitude: string;
   startDate: string;
   expectedEndDate: string;
   taskListEnabled: boolean;
@@ -61,6 +63,8 @@ export interface ReportLaborEntry {
   description: string;
   quantity: number;
   unit: string;
+  sourceType: "own" | "outsourced";
+  serviceProvider: string;
   notes: string;
 }
 
@@ -71,6 +75,15 @@ export interface ReportEquipmentEntry {
   description: string;
   quantity: number;
   hours: number;
+  originType: "own" | "rented" | "other";
+  originDetail: string;
+  rentalDate: string;
+  returnDeadline: string;
+  rentalCompany: string;
+  returnAlertEnabled: boolean;
+  returnAlertDaysBefore: number;
+  photoDataUrl: string;
+  photoFileName: string;
   notes: string;
 }
 
@@ -107,12 +120,27 @@ export interface ReportTask {
   percentComplete: number;
 }
 
+export interface ReportActivityEntry {
+  id: string;
+  reportId: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  percentComplete: number;
+  status: "started" | "in_progress" | "completed" | "not_started" | "paused" | "not_executed";
+  startTime: string;
+  endTime: string;
+  laborEntryIds: string[];
+  equipmentEntryIds: string[];
+}
+
 export interface ReportStructuredData {
   laborEntries: ReportLaborEntry[];
   equipmentEntries: ReportEquipmentEntry[];
   occurrenceEntries: ReportOccurrenceEntry[];
   checklistResponses: ReportChecklistResponse[];
   tasks: ReportTask[];
+  activityEntries: ReportActivityEntry[];
 }
 
 export interface ReportAttachment {
@@ -205,10 +233,18 @@ export interface CreateProjectPayload {
   contractor?: string;
   contract?: string;
   address?: string;
+  latitude?: string;
+  longitude?: string;
   startDate?: string;
   expectedEndDate?: string;
   taskListEnabled?: boolean;
   requirePhotos?: boolean;
+}
+
+export interface WeatherSuggestion {
+  tempo: Record<"Manhã" | "Tarde" | "Noite", "Claro" | "Nublado" | "Chuvoso" | "">;
+  condicoes: Record<"Manhã" | "Tarde" | "Noite", "Praticável" | "Parcialmente Praticável" | "Impraticável" | "">;
+  indicePluviometrico: string;
 }
 
 export interface UserPayload {
@@ -279,17 +315,25 @@ let csrfToken = "";
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const method = init?.method?.toUpperCase() ?? "GET";
   const requestCsrfToken = method === "GET" || method === "HEAD" || method === "OPTIONS" ? "" : csrfToken || readCookie("diario_csrf");
-  const response = await fetch(`${API_URL}${path}`, {
-    credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...(requestCsrfToken ? { "X-CSRF-Token": requestCsrfToken } : {}),
-      ...init?.headers
-    },
-    ...init
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...(requestCsrfToken ? { "X-CSRF-Token": requestCsrfToken } : {}),
+        ...init?.headers
+      },
+      ...init
+    });
+  } catch {
+    throw new ApiError("Não foi possível conectar à API local.", 0);
+  }
 
-  const body = (await response.json()) as T & { error?: string; csrfToken?: string };
+  const contentType = response.headers.get("content-type") ?? "";
+  const body = contentType.includes("application/json")
+    ? (await response.json()) as T & { error?: string; csrfToken?: string }
+    : ({ error: await response.text() } as T & { error?: string; csrfToken?: string });
 
   if (body.csrfToken) {
     csrfToken = body.csrfToken;
@@ -346,6 +390,10 @@ export const api = {
 
   async getProjectOverview(id: string) {
     return request<{ project: Project; counters: { reports: number; activities: number; occurrences: number; comments: number; photos: number; videos: number }; recentReports: Report[]; recentPhotos: ReportAttachment[] }>(`/api/projects/${id}/overview`);
+  },
+
+  async getProjectWeather(id: string, date: string) {
+    return request<{ weather: WeatherSuggestion; source: { provider: string; date: string; latitude: number; longitude: number }; warning: string }>(`/api/projects/${id}/weather?date=${encodeURIComponent(date)}`);
   },
 
   async getReports(projectId?: string) {

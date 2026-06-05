@@ -58,9 +58,12 @@ Allow a construction company to create projects, configure report templates, rec
 ## MVP Acceptance Criteria
 
 - A project can be registered with simple and complete data.
+- A project can store jobsite coordinates and optionally fill them from browser/mobile geolocation.
 - A report can be created for a project.
 - A report template can define enabled report sections.
 - Labor, equipment, occurrence, and checklist catalogs are available.
+- RDO climate conditions can be filled with structured period tables and optionally suggested from Open-Meteo using project coordinates.
+- RDO labor entries can be edited after insertion, can identify own or outsourced labor, and can record the service provider for outsourced labor.
 - A draft report can be approved.
 - Approval locks the report.
 - Approved reports include creator, approver, signature, date/time, and audit metadata.
@@ -92,10 +95,12 @@ Allow a construction company to create projects, configure report templates, rec
 
 ## Current Implementation Status
 
-- Completed: benchmarking workflow, web shell, project/settings prototype, seed APIs, report template/catalog APIs, and the first functional RDO workflow.
+- Completed: benchmarking workflow, web shell, project/settings prototype, SQLite persistence, authentication/CSRF baseline, report template/catalog APIs, and the first functional RDO workflow.
 - The functional RDO workflow now supports create draft, edit sections, send to review, approve, store approval metadata, generate a virtual signature ID, reserve a PDF version ID, calculate a report hash, and block edits after approval.
-- Stage 2 now adds local SQLite persistence, initial user/signature records, report section storage, audit log persistence, and PDF version placeholders.
-- Real authentication, permission enforcement, real PDF generation, WhatsApp intake, and audio transcription remain next-stage work.
+- The RDO editor now separates the main report areas into individual visual blocks and uses structured inputs for climate, labor, equipment, occurrences, checklist, tasks, media, and signature areas.
+- Climate can be suggested from Open-Meteo when a project has valid coordinates, but the user must validate the actual jobsite conditions.
+- Labor entries now support pencil-based editing, dropdown function selection, custom report-level functions, own/outsourced classification, and outsourced service provider names.
+- Real PDF generation, WhatsApp intake, audio transcription, password recovery, persistent rate limiting, and per-project permissions remain next-stage work.
 
 ## Implementation Gate
 

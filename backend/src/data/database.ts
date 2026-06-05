@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { hashSync } from "@node-rs/argon2";
 import { checklists, company, equipment, labor, occurrenceTypes, projectGroups, projects, reports, reportTemplates, signatures, users } from "./seed.js";
-import type { AuditLog, AuthSession, CatalogItem, ChecklistItem, ChecklistTemplate, Company, PdfVersion, Project, Report, ReportAttachment, ReportChecklistResponse, ReportEquipmentEntry, ReportLaborEntry, ReportOccurrenceEntry, ReportSections, ReportStructuredData, ReportTask, ReportTemplate, Signature, User } from "../types.js";
+import type { AuditLog, AuthSession, CatalogItem, ChecklistItem, ChecklistTemplate, Company, PdfVersion, Project, Report, ReportActivityEntry, ReportAttachment, ReportChecklistResponse, ReportEquipmentEntry, ReportLaborEntry, ReportOccurrenceEntry, ReportSections, ReportStructuredData, ReportTask, ReportTemplate, Signature, User } from "../types.js";
 
 type CountRow = { count: number };
 
@@ -61,6 +61,8 @@ type ProjectRow = {
   contractor: string;
   contract: string;
   address: string;
+  latitude: string;
+  longitude: string;
   start_date: string;
   expected_end_date: string;
   task_list_enabled: number;
@@ -140,6 +142,8 @@ type ReportLaborEntryRow = {
   description: string;
   quantity: number;
   unit: string;
+  source_type: ReportLaborEntry["sourceType"];
+  service_provider: string;
   notes: string;
 };
 
@@ -150,6 +154,15 @@ type ReportEquipmentEntryRow = {
   description: string;
   quantity: number;
   hours: number;
+  origin_type: ReportEquipmentEntry["originType"];
+  origin_detail: string;
+  rental_date: string;
+  return_deadline: string;
+  rental_company: string;
+  return_alert_enabled: number;
+  return_alert_days_before: number;
+  photo_data_url: string;
+  photo_file_name: string;
   notes: string;
 };
 
@@ -184,6 +197,20 @@ type ReportTaskRow = {
   start_date: string;
   due_date: string;
   percent_complete: number;
+};
+
+type ReportActivityEntryRow = {
+  id: string;
+  report_id: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  percent_complete: number;
+  status: ReportActivityEntry["status"];
+  start_time: string;
+  end_time: string;
+  labor_entry_ids_json: string;
+  equipment_entry_ids_json: string;
 };
 
 type ReportAttachmentRow = {
@@ -255,7 +282,8 @@ const emptyStructuredData = (): ReportStructuredData => ({
   equipmentEntries: [],
   occurrenceEntries: [],
   checklistResponses: [],
-  tasks: []
+  tasks: [],
+  activityEntries: []
 });
 
 function toCompany(row: CompanyRow): Company {
@@ -318,6 +346,8 @@ function toProject(row: ProjectRow): Project {
     contractor: row.contractor,
     contract: row.contract,
     address: row.address,
+    latitude: row.latitude,
+    longitude: row.longitude,
     startDate: row.start_date,
     expectedEndDate: row.expected_end_date,
     taskListEnabled: fromBool(row.task_list_enabled),
@@ -436,6 +466,8 @@ function toReportLaborEntry(row: ReportLaborEntryRow): ReportLaborEntry {
     description: row.description,
     quantity: row.quantity,
     unit: row.unit,
+    sourceType: row.source_type ?? "own",
+    serviceProvider: row.service_provider ?? "",
     notes: row.notes
   };
 }
@@ -448,6 +480,15 @@ function toReportEquipmentEntry(row: ReportEquipmentEntryRow): ReportEquipmentEn
     description: row.description,
     quantity: row.quantity,
     hours: row.hours,
+    originType: row.origin_type ?? "own",
+    originDetail: row.origin_detail ?? "",
+    rentalDate: row.rental_date ?? "",
+    returnDeadline: row.return_deadline ?? "",
+    rentalCompany: row.rental_company ?? "",
+    returnAlertEnabled: fromBool(row.return_alert_enabled ?? 0),
+    returnAlertDaysBefore: row.return_alert_days_before ?? 3,
+    photoDataUrl: row.photo_data_url ?? "",
+    photoFileName: row.photo_file_name ?? "",
     notes: row.notes
   };
 }
@@ -488,6 +529,22 @@ function toReportTask(row: ReportTaskRow): ReportTask {
     startDate: row.start_date ?? "",
     dueDate: row.due_date,
     percentComplete: row.percent_complete ?? (row.status === "completed" ? 100 : 0)
+  };
+}
+
+function toReportActivityEntry(row: ReportActivityEntryRow): ReportActivityEntry {
+  return {
+    id: row.id,
+    reportId: row.report_id,
+    description: row.description,
+    quantity: row.quantity,
+    unit: row.unit,
+    percentComplete: row.percent_complete,
+    status: row.status,
+    startTime: row.start_time,
+    endTime: row.end_time,
+    laborEntryIds: parseJson<string[]>(row.labor_entry_ids_json, []),
+    equipmentEntryIds: parseJson<string[]>(row.equipment_entry_ids_json, [])
   };
 }
 
@@ -625,10 +682,10 @@ class AppDatabase {
       .prepare(
         `INSERT INTO projects (
           id, company_id, name, status, group_name, contract_type, responsible, contractor, contract,
-          address, start_date, expected_end_date, task_list_enabled, require_photos
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          address, latitude, longitude, start_date, expected_end_date, task_list_enabled, require_photos
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-      .run(project.id, project.companyId, project.name, project.status, project.group, project.contractType, project.responsible, project.contractor, project.contract, project.address, project.startDate, project.expectedEndDate, toBool(project.taskListEnabled), toBool(project.requirePhotos));
+      .run(project.id, project.companyId, project.name, project.status, project.group, project.contractType, project.responsible, project.contractor, project.contract, project.address, project.latitude, project.longitude, project.startDate, project.expectedEndDate, toBool(project.taskListEnabled), toBool(project.requirePhotos));
 
     this.writeAudit({
       entityType: "project",
@@ -646,10 +703,10 @@ class AppDatabase {
       .prepare(
         `UPDATE projects
          SET name = ?, status = ?, group_name = ?, contract_type = ?, responsible = ?, contractor = ?,
-             contract = ?, address = ?, start_date = ?, expected_end_date = ?, task_list_enabled = ?, require_photos = ?
+             contract = ?, address = ?, latitude = ?, longitude = ?, start_date = ?, expected_end_date = ?, task_list_enabled = ?, require_photos = ?
          WHERE id = ?`
       )
-      .run(project.name, project.status, project.group, project.contractType, project.responsible, project.contractor, project.contract, project.address, project.startDate, project.expectedEndDate, toBool(project.taskListEnabled), toBool(project.requirePhotos), project.id);
+      .run(project.name, project.status, project.group, project.contractType, project.responsible, project.contractor, project.contract, project.address, project.latitude, project.longitude, project.startDate, project.expectedEndDate, toBool(project.taskListEnabled), toBool(project.requirePhotos), project.id);
 
     if (result.changes === 0) {
       return undefined;
@@ -779,6 +836,11 @@ class AppDatabase {
 
   listCatalog(kind: "labor" | "equipment" | "occurrence_type" | "project_group") {
     return (this.db.prepare("SELECT * FROM catalog_items WHERE kind = ? ORDER BY description").all(kind) as CatalogItemRow[]).map(toCatalogItem);
+  }
+
+  findCatalogItemByDescription(kind: "labor" | "equipment" | "occurrence_type" | "project_group", description: string) {
+    const row = this.db.prepare("SELECT * FROM catalog_items WHERE kind = ? AND lower(description) = lower(?) LIMIT 1").get(kind, description.trim()) as CatalogItemRow | undefined;
+    return row ? toCatalogItem(row) : undefined;
   }
 
   getCatalogItem(id: string) {
@@ -1104,7 +1166,8 @@ class AppDatabase {
       equipmentEntries: (this.db.prepare("SELECT * FROM report_equipment_entries WHERE report_id = ? ORDER BY description").all(reportId) as ReportEquipmentEntryRow[]).map(toReportEquipmentEntry),
       occurrenceEntries: (this.db.prepare("SELECT * FROM report_occurrence_entries WHERE report_id = ? ORDER BY description").all(reportId) as ReportOccurrenceEntryRow[]).map(toReportOccurrenceEntry),
       checklistResponses: (this.db.prepare("SELECT * FROM report_checklist_responses WHERE report_id = ? ORDER BY item_label").all(reportId) as ReportChecklistResponseRow[]).map(toReportChecklistResponse),
-      tasks: (this.db.prepare("SELECT * FROM report_tasks WHERE report_id = ? ORDER BY status, due_date, description").all(reportId) as ReportTaskRow[]).map(toReportTask)
+      tasks: (this.db.prepare("SELECT * FROM report_tasks WHERE report_id = ? ORDER BY status, due_date, description").all(reportId) as ReportTaskRow[]).map(toReportTask),
+      activityEntries: (this.db.prepare("SELECT * FROM report_activity_entries WHERE report_id = ? ORDER BY description").all(reportId) as ReportActivityEntryRow[]).map(toReportActivityEntry)
     };
   }
 
@@ -1154,25 +1217,45 @@ class AppDatabase {
     this.db.prepare("DELETE FROM report_occurrence_entries WHERE report_id = ?").run(reportId);
     this.db.prepare("DELETE FROM report_checklist_responses WHERE report_id = ?").run(reportId);
     this.db.prepare("DELETE FROM report_tasks WHERE report_id = ?").run(reportId);
+    this.db.prepare("DELETE FROM report_activity_entries WHERE report_id = ?").run(reportId);
 
     for (const entry of structuredData.laborEntries) {
       this.db
         .prepare(
           `INSERT INTO report_labor_entries (
-            id, report_id, catalog_item_id, description, quantity, unit, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+            id, report_id, catalog_item_id, description, quantity, unit, source_type, service_provider, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(entry.id, reportId, entry.catalogItemId ?? null, entry.description, entry.quantity, entry.unit, entry.notes);
+        .run(entry.id, reportId, entry.catalogItemId ?? null, entry.description, entry.quantity, entry.unit, entry.sourceType ?? "own", entry.serviceProvider ?? "", entry.notes);
     }
 
     for (const entry of structuredData.equipmentEntries) {
       this.db
         .prepare(
           `INSERT INTO report_equipment_entries (
-            id, report_id, catalog_item_id, description, quantity, hours, notes
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)`
+            id, report_id, catalog_item_id, description, quantity, hours, origin_type, origin_detail,
+            rental_date, return_deadline, rental_company, return_alert_enabled, return_alert_days_before,
+            photo_data_url, photo_file_name, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(entry.id, reportId, entry.catalogItemId ?? null, entry.description, entry.quantity, entry.hours, entry.notes);
+        .run(
+          entry.id,
+          reportId,
+          entry.catalogItemId ?? null,
+          entry.description,
+          entry.quantity,
+          entry.hours,
+          entry.originType ?? "own",
+          entry.originType === "other" ? entry.originDetail ?? "" : "",
+          entry.rentalDate ?? "",
+          entry.returnDeadline ?? "",
+          entry.rentalCompany ?? "",
+          toBool(Boolean(entry.returnAlertEnabled)),
+          entry.returnAlertDaysBefore ?? 0,
+          entry.photoDataUrl ?? "",
+          entry.photoFileName ?? "",
+          entry.notes
+        );
     }
 
     for (const entry of structuredData.occurrenceEntries) {
@@ -1203,6 +1286,17 @@ class AppDatabase {
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
         .run(task.id, reportId, task.description, task.status, task.owner, task.scheduleItem, task.startDate, task.dueDate, task.percentComplete);
+    }
+
+    for (const activity of structuredData.activityEntries) {
+      this.db
+        .prepare(
+          `INSERT INTO report_activity_entries (
+            id, report_id, description, quantity, unit, percent_complete, status, start_time, end_time,
+            labor_entry_ids_json, equipment_entry_ids_json
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+        .run(activity.id, reportId, activity.description, activity.quantity, activity.unit, activity.percentComplete, activity.status, activity.startTime, activity.endTime, JSON.stringify(activity.laborEntryIds), JSON.stringify(activity.equipmentEntryIds));
     }
   }
 
@@ -1308,6 +1402,8 @@ class AppDatabase {
         contractor TEXT NOT NULL DEFAULT '',
         contract TEXT NOT NULL DEFAULT '',
         address TEXT NOT NULL DEFAULT '',
+        latitude TEXT NOT NULL DEFAULT '',
+        longitude TEXT NOT NULL DEFAULT '',
         start_date TEXT NOT NULL DEFAULT '',
         expected_end_date TEXT NOT NULL DEFAULT '',
         task_list_enabled INTEGER NOT NULL DEFAULT 0,
@@ -1392,6 +1488,8 @@ class AppDatabase {
         description TEXT NOT NULL,
         quantity REAL NOT NULL DEFAULT 0,
         unit TEXT NOT NULL DEFAULT 'profissionais',
+        source_type TEXT NOT NULL DEFAULT 'own',
+        service_provider TEXT NOT NULL DEFAULT '',
         notes TEXT NOT NULL DEFAULT ''
       );
 
@@ -1404,6 +1502,15 @@ class AppDatabase {
         description TEXT NOT NULL,
         quantity REAL NOT NULL DEFAULT 0,
         hours REAL NOT NULL DEFAULT 0,
+        origin_type TEXT NOT NULL DEFAULT 'own',
+        origin_detail TEXT NOT NULL DEFAULT '',
+        rental_date TEXT NOT NULL DEFAULT '',
+        return_deadline TEXT NOT NULL DEFAULT '',
+        rental_company TEXT NOT NULL DEFAULT '',
+        return_alert_enabled INTEGER NOT NULL DEFAULT 0,
+        return_alert_days_before REAL NOT NULL DEFAULT 3,
+        photo_data_url TEXT NOT NULL DEFAULT '',
+        photo_file_name TEXT NOT NULL DEFAULT '',
         notes TEXT NOT NULL DEFAULT ''
       );
 
@@ -1447,6 +1554,22 @@ class AppDatabase {
       );
 
       CREATE INDEX IF NOT EXISTS idx_report_tasks_report ON report_tasks(report_id);
+
+      CREATE TABLE IF NOT EXISTS report_activity_entries (
+        id TEXT PRIMARY KEY,
+        report_id TEXT NOT NULL REFERENCES reports(id) ON DELETE CASCADE,
+        description TEXT NOT NULL,
+        quantity REAL NOT NULL DEFAULT 0,
+        unit TEXT NOT NULL DEFAULT '',
+        percent_complete REAL NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'in_progress',
+        start_time TEXT NOT NULL DEFAULT '',
+        end_time TEXT NOT NULL DEFAULT '',
+        labor_entry_ids_json TEXT NOT NULL DEFAULT '[]',
+        equipment_entry_ids_json TEXT NOT NULL DEFAULT '[]'
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_report_activity_entries_report ON report_activity_entries(report_id);
 
       CREATE TABLE IF NOT EXISTS report_attachments (
         id TEXT PRIMARY KEY,
@@ -1497,6 +1620,19 @@ class AppDatabase {
     this.ensureColumn("report_attachments", "task_id", "ALTER TABLE report_attachments ADD COLUMN task_id TEXT REFERENCES report_tasks(id) ON DELETE SET NULL");
     this.ensureColumn("users", "password_hash", "ALTER TABLE users ADD COLUMN password_hash TEXT NOT NULL DEFAULT ''");
     this.ensureColumn("auth_sessions", "csrf_token_hash", "ALTER TABLE auth_sessions ADD COLUMN csrf_token_hash TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("projects", "latitude", "ALTER TABLE projects ADD COLUMN latitude TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("projects", "longitude", "ALTER TABLE projects ADD COLUMN longitude TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("report_labor_entries", "source_type", "ALTER TABLE report_labor_entries ADD COLUMN source_type TEXT NOT NULL DEFAULT 'own'");
+    this.ensureColumn("report_labor_entries", "service_provider", "ALTER TABLE report_labor_entries ADD COLUMN service_provider TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("report_equipment_entries", "origin_type", "ALTER TABLE report_equipment_entries ADD COLUMN origin_type TEXT NOT NULL DEFAULT 'own'");
+    this.ensureColumn("report_equipment_entries", "origin_detail", "ALTER TABLE report_equipment_entries ADD COLUMN origin_detail TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("report_equipment_entries", "rental_date", "ALTER TABLE report_equipment_entries ADD COLUMN rental_date TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("report_equipment_entries", "return_deadline", "ALTER TABLE report_equipment_entries ADD COLUMN return_deadline TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("report_equipment_entries", "rental_company", "ALTER TABLE report_equipment_entries ADD COLUMN rental_company TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("report_equipment_entries", "return_alert_enabled", "ALTER TABLE report_equipment_entries ADD COLUMN return_alert_enabled INTEGER NOT NULL DEFAULT 0");
+    this.ensureColumn("report_equipment_entries", "return_alert_days_before", "ALTER TABLE report_equipment_entries ADD COLUMN return_alert_days_before REAL NOT NULL DEFAULT 3");
+    this.ensureColumn("report_equipment_entries", "photo_data_url", "ALTER TABLE report_equipment_entries ADD COLUMN photo_data_url TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("report_equipment_entries", "photo_file_name", "ALTER TABLE report_equipment_entries ADD COLUMN photo_file_name TEXT NOT NULL DEFAULT ''");
   }
 
   private ensureColumn(tableName: string, columnName: string, statement: string) {
@@ -1518,7 +1654,10 @@ class AppDatabase {
     }
 
     for (const user of users) {
-      const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD ?? "Jonas123";
+      const defaultPassword = process.env.DEFAULT_ADMIN_PASSWORD ?? (process.env.NODE_ENV === "production" ? "" : "Jonas123");
+      if (!defaultPassword) {
+        throw new Error("DEFAULT_ADMIN_PASSWORD is required in production");
+      }
       const passwordHash = hashSync(defaultPassword);
       this.db
         .prepare(
@@ -1542,10 +1681,10 @@ class AppDatabase {
         .prepare(
           `INSERT OR IGNORE INTO projects (
             id, company_id, name, status, group_name, contract_type, responsible, contractor, contract,
-            address, start_date, expected_end_date, task_list_enabled, require_photos
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+            address, latitude, longitude, start_date, expected_end_date, task_list_enabled, require_photos
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(project.id, project.companyId, project.name, project.status, project.group, project.contractType, project.responsible, project.contractor, project.contract, project.address, project.startDate, project.expectedEndDate, toBool(project.taskListEnabled), toBool(project.requirePhotos));
+        .run(project.id, project.companyId, project.name, project.status, project.group, project.contractType, project.responsible, project.contractor, project.contract, project.address, project.latitude, project.longitude, project.startDate, project.expectedEndDate, toBool(project.taskListEnabled), toBool(project.requirePhotos));
     }
 
     for (const template of reportTemplates) {

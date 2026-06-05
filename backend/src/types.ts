@@ -55,6 +55,8 @@ export interface Project {
   contractor: string;
   contract: string;
   address: string;
+  latitude: string;
+  longitude: string;
   startDate: string;
   expectedEndDate: string;
   taskListEnabled: boolean;
@@ -113,6 +115,8 @@ export interface ReportLaborEntry {
   description: string;
   quantity: number;
   unit: string;
+  sourceType: "own" | "outsourced";
+  serviceProvider: string;
   notes: string;
 }
 
@@ -123,6 +127,15 @@ export interface ReportEquipmentEntry {
   description: string;
   quantity: number;
   hours: number;
+  originType: "own" | "rented" | "other";
+  originDetail: string;
+  rentalDate: string;
+  returnDeadline: string;
+  rentalCompany: string;
+  returnAlertEnabled: boolean;
+  returnAlertDaysBefore: number;
+  photoDataUrl: string;
+  photoFileName: string;
   notes: string;
 }
 
@@ -159,12 +172,27 @@ export interface ReportTask {
   percentComplete: number;
 }
 
+export interface ReportActivityEntry {
+  id: string;
+  reportId: string;
+  description: string;
+  quantity: number;
+  unit: string;
+  percentComplete: number;
+  status: "started" | "in_progress" | "completed" | "not_started" | "paused" | "not_executed";
+  startTime: string;
+  endTime: string;
+  laborEntryIds: string[];
+  equipmentEntryIds: string[];
+}
+
 export interface ReportStructuredData {
   laborEntries: ReportLaborEntry[];
   equipmentEntries: ReportEquipmentEntry[];
   occurrenceEntries: ReportOccurrenceEntry[];
   checklistResponses: ReportChecklistResponse[];
   tasks: ReportTask[];
+  activityEntries: ReportActivityEntry[];
 }
 
 export interface ReportAttachment {

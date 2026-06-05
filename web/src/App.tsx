@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import type { ChangeEvent, FormEvent, ReactNode } from "react";
 import {
   ArrowLeft,
@@ -11,11 +11,13 @@ import {
   CheckCircle2,
   ClipboardCheck,
   ClipboardList,
+  CloudSun,
   Edit3,
   FileLock2,
   FileText,
   HardHat,
   ListChecks,
+  LocateFixed,
   LogOut,
   LockKeyhole,
   Mic,
@@ -46,6 +48,7 @@ import type {
   Project,
   ProjectStatus,
   Report,
+  ReportActivityEntry,
   ReportAttachment,
   ReportChecklistResponse,
   ReportEquipmentEntry,
@@ -57,7 +60,8 @@ import type {
   ReportTemplate,
   ReportTemplatePayload,
   User as AppUser,
-  UserPayload
+  UserPayload,
+  WeatherSuggestion
 } from "./api";
 
 type Page =
@@ -121,6 +125,36 @@ const reportFields: Array<{ key: keyof ReportSections; item: string; label: stri
   { key: "checklistNotes", item: "checklist", label: "Checklist", placeholder: "Resumo das verificações realizadas.", rows: 3 },
   { key: "comments", item: "commentary", label: "Comentários", placeholder: "Observações gerais e próximos passos.", rows: 4 }
 ];
+
+const marcoOneTitles = {
+  weather: "Condições Climáticas",
+  labor: "Mão de Obra",
+  equipment: "Equipamentos",
+  activities: "Atividades",
+  occurrences: "Ocorrências",
+  checklist: "Checklist",
+  comments: "Comentários",
+  photos: "Fotos",
+  videos: "Vídeos",
+  attachments: "Anexos",
+  manualSignature: "Assinatura Manual"
+} as const;
+
+const weatherPeriods = ["Manhã", "Tarde", "Noite"] as const;
+const weatherOptions = ["Claro", "Nublado", "Chuvoso"] as const;
+const workConditionOptions = ["Praticável", "Parcialmente Praticável", "Impraticável"] as const;
+
+type WeatherPeriod = (typeof weatherPeriods)[number];
+type WeatherOption = (typeof weatherOptions)[number];
+type WorkConditionOption = (typeof workConditionOptions)[number];
+
+type WeatherFormValue = WeatherSuggestion;
+type LaborFunctionOption = {
+  value: string;
+  label: string;
+  catalogItemId?: string;
+  description: string;
+};
 
 const menuItems = [
   { page: "projects" as Page, label: "Obras", icon: Building2 },
@@ -259,8 +293,13 @@ function App() {
   }
 
   async function handleUpdateReport(reportId: string, sections: Partial<ReportSections>, structuredData: ReportStructuredData) {
+    const shouldRefreshEquipmentCatalog = structuredData.equipmentEntries.some((entry) => !entry.catalogItemId && entry.description.trim());
     const response = await api.updateReport(reportId, { sections, structuredData });
     upsertReport(response.report);
+    if (shouldRefreshEquipmentCatalog) {
+      const equipmentResponse = await api.getEquipment();
+      setEquipment(equipmentResponse.equipment);
+    }
   }
 
   async function handleSubmitReport(reportId: string) {
@@ -439,6 +478,7 @@ function App() {
             equipment={equipment}
             occurrences={occurrences}
             checklists={checklists}
+            reports={reports}
             onBack={() => setPage("reports")}
             onSave={handleUpdateReport}
             onSubmit={handleSubmitReport}
@@ -823,7 +863,7 @@ function ReportsPage({ projects, selectedProjectId, reports, onSelectProject, on
   );
 }
 
-function ReportDetailPage({ report, project, template, labor, equipment, occurrences, checklists, onBack, onSave, onSubmit, onApprove }: { report: Report; project?: Project; template?: ReportTemplate; labor: CatalogItem[]; equipment: CatalogItem[]; occurrences: CatalogItem[]; checklists: ChecklistTemplate[]; onBack: () => void; onSave: (reportId: string, sections: Partial<ReportSections>, structuredData: ReportStructuredData) => Promise<void>; onSubmit: (reportId: string) => Promise<void>; onApprove: (reportId: string) => Promise<void> }) {
+function ReportDetailPage({ report, project, template, labor, equipment, occurrences, checklists, reports, onBack, onSave, onSubmit, onApprove }: { report: Report; project?: Project; template?: ReportTemplate; labor: CatalogItem[]; equipment: CatalogItem[]; occurrences: CatalogItem[]; checklists: ChecklistTemplate[]; reports: Report[]; onBack: () => void; onSave: (reportId: string, sections: Partial<ReportSections>, structuredData: ReportStructuredData) => Promise<void>; onSubmit: (reportId: string) => Promise<void>; onApprove: (reportId: string) => Promise<void> }) {
   const [sections, setSections] = useState(report.sections);
   const [structuredData, setStructuredData] = useState(report.structuredData);
   const [attachments, setAttachments] = useState<ReportAttachment[]>([]);
@@ -855,6 +895,8 @@ function ReportDetailPage({ report, project, template, labor, equipment, occurre
 
   const enabledItems = template?.enabledItems ?? reportItemOptions.map(([value]) => value);
   const visibleFields = reportFields.filter((field) => enabledItems.includes(field.item) && !["labor", "equipment", "occurrence", "checklist"].includes(field.item));
+  const visibleFieldByKey = new Map(visibleFields.map((field) => [field.key, field]));
+  const rentalCompanyOptions = useMemo(() => Array.from(new Set(reports.flatMap((item) => item.structuredData.equipmentEntries.map((entry) => entry.rentalCompany.trim()).filter(Boolean)))).sort((a, b) => a.localeCompare(b, "pt-BR")), [reports]);
   const locked = report.status === "approved";
   const canSubmit = report.status === "draft" || report.status === "rejected" || report.status === "revised";
   const canApprove = report.status === "pending_review";
@@ -875,8 +917,43 @@ function ReportDetailPage({ report, project, template, labor, equipment, occurre
     setSections((current) => ({ ...current, [key]: value }));
   };
 
+  const loadWeatherSuggestion = async () => {
+    if (!project) {
+      throw new Error("Selecione uma obra antes de buscar dados climáticos.");
+    }
+
+    const response = await api.getProjectWeather(project.id, report.reportDate);
+    return response.weather;
+  };
+
   const updateStructuredData = (updates: Partial<ReportStructuredData>) => {
     setStructuredData((current) => ({ ...current, ...updates }));
+  };
+
+  const renderFieldMarco = (key: keyof ReportSections) => {
+    const field = visibleFieldByKey.get(key);
+    if (!field) return null;
+    if (key === "activities") return null;
+
+    if (key === "weather") {
+      return (
+        <ReportMarcoOne title={field.label} key={field.key}>
+          <WeatherConditionsEditor
+            disabled={locked}
+            value={sections.weather}
+            canLoadWeather={Boolean(project?.latitude && project?.longitude)}
+            onLoadWeather={loadWeatherSuggestion}
+            onChange={(value) => changeSection("weather", value)}
+          />
+        </ReportMarcoOne>
+      );
+    }
+
+    return (
+      <ReportMarcoOne title={field.label} key={field.key}>
+        <textarea className="marco-textarea" aria-label={field.label} disabled={locked} rows={field.rows} value={sections[field.key]} placeholder={field.placeholder} onChange={(event) => changeSection(field.key, event.target.value)} />
+      </ReportMarcoOne>
+    );
   };
 
   const handleAttachmentUpload = async (file: File, caption: string, taskId?: string) => {
@@ -915,36 +992,42 @@ function ReportDetailPage({ report, project, template, labor, equipment, occurre
       )}
       {error && <div className="error-banner compact">{error}</div>}
       <div className="report-editor-layout">
-        <section className="panel report-editor">
-          <div className="panel-header">
+        <section className="report-editor">
+          <div className="report-editor-heading">
             <h2>Preenchimento do relatório</h2>
             <span className="badge gray">{locked || mode === "read" ? "Leitura" : "Editável"}</span>
           </div>
           {mode === "read" ? (
             <ReportReadOnlyView report={report} project={project} sections={sections} structuredData={structuredData} attachments={attachments} />
           ) : (
-            <>
-          <div className="editor-grid">
-            {visibleFields.map((field) => (
-              <label className="editor-field" key={field.key}>
-                {field.label}
-                <textarea disabled={locked} rows={field.rows} value={sections[field.key]} placeholder={field.placeholder} onChange={(event) => changeSection(field.key, event.target.value)} />
-              </label>
-            ))}
-          </div>
-          <StructuredReportEditor
-            reportId={report.id}
-            locked={locked}
-            enabledItems={enabledItems}
-            structuredData={structuredData}
-            labor={labor}
-            equipment={equipment}
-            occurrences={occurrences}
-            checklists={checklists}
-            onChange={updateStructuredData}
-          />
-          <ReportAttachmentsPanel locked={locked} tasks={structuredData.tasks} attachments={attachments} onUpload={handleAttachmentUpload} />
-            </>
+            <div className="report-marco-list">
+              {renderFieldMarco("weather")}
+              <StructuredReportEditor
+                reportId={report.id}
+                locked={locked}
+                enabledItems={enabledItems}
+                structuredData={structuredData}
+                labor={labor}
+                equipment={equipment}
+                occurrences={occurrences}
+                checklists={checklists}
+                rentalCompanyOptions={rentalCompanyOptions}
+                onChange={updateStructuredData}
+                afterEquipment={visibleFieldByKey.has("activities") ? (
+                  <ActivitiesMarco
+                    locked={locked}
+                    reportId={report.id}
+                    activities={structuredData.activityEntries}
+                    laborEntries={structuredData.laborEntries}
+                    equipmentEntries={structuredData.equipmentEntries}
+                    onChange={(activityEntries) => updateStructuredData({ activityEntries })}
+                  />
+                ) : null}
+                afterChecklist={renderFieldMarco("comments")}
+              />
+              <ReportAttachmentsPanel locked={locked} enabledItems={enabledItems} tasks={structuredData.tasks} attachments={attachments} onUpload={handleAttachmentUpload} />
+              {enabledItems.includes("signature") && <ManualSignatureMarco report={report} />}
+            </div>
           )}
           <div className="button-row">
             {mode === "read" && !locked && <button className="secondary-action" type="button" onClick={() => setMode("edit")}><Edit3 size={17} />Editar lançamento</button>}
@@ -991,14 +1074,15 @@ function ReportDetailPage({ report, project, template, labor, equipment, occurre
 
 function ReportReadOnlyView({ report, project, sections, structuredData, attachments }: { report: Report; project?: Project; sections: ReportSections; structuredData: ReportStructuredData; attachments: ReportAttachment[] }) {
   const textBlocks = [
-    ["Condições climáticas", sections.weather],
+    ["Condições climáticas", formatWeatherValueForDisplay(sections.weather)],
     ["Atividades executadas", sections.activities],
     ["Comentários", sections.comments]
   ].filter(([, value]) => value.trim());
   const timelineItems = [
     ...textBlocks.map(([title, value]) => ({ title, value, meta: "Campo narrativo" })),
-    ...structuredData.laborEntries.map((entry) => ({ title: entry.description, value: `${entry.quantity} ${entry.unit}`, meta: "Mão de obra" })),
-    ...structuredData.equipmentEntries.map((entry) => ({ title: entry.description, value: `${entry.quantity} un. / ${entry.hours}h`, meta: "Equipamento" })),
+    ...structuredData.laborEntries.map((entry) => ({ title: entry.description, value: laborEntrySummary(entry), meta: "Mão de obra" })),
+    ...structuredData.equipmentEntries.map((entry) => ({ title: entry.description, value: equipmentEntrySummary(entry), meta: "Equipamento" })),
+    ...structuredData.activityEntries.map((entry) => ({ title: entry.description, value: activitySummary(entry), meta: "Atividade" })),
     ...structuredData.occurrenceEntries.map((entry) => ({ title: entry.description, value: occurrenceSeverityLabel(entry.severity), meta: "Ocorrência" })),
     ...structuredData.checklistResponses.map((entry) => ({ title: entry.question, value: entry.answer || "Sem resposta", meta: "Checklist" })),
     ...structuredData.tasks.map((task) => ({ title: task.scheduleItem ? `${task.scheduleItem} - ${task.description}` : task.description, value: `${taskStatusLabel(task.status)} / ${task.percentComplete ?? 0}%${task.owner ? ` / ${task.owner}` : ""}${task.startDate ? ` / Início ${formatDate(task.startDate)}` : ""}${task.dueDate ? ` / Prazo ${formatDate(task.dueDate)}` : ""}`, meta: "Tarefa" }))
@@ -1025,11 +1109,351 @@ function ReportReadOnlyView({ report, project, sections, structuredData, attachm
   );
 }
 
-function ReportAttachmentsPanel({ locked, tasks, attachments, onUpload }: { locked: boolean; tasks: ReportTask[]; attachments: ReportAttachment[]; onUpload: (file: File, caption: string, taskId?: string) => Promise<void> }) {
+function WeatherConditionsEditor({
+  disabled,
+  value,
+  canLoadWeather,
+  onLoadWeather,
+  onChange
+}: {
+  disabled: boolean;
+  value: string;
+  canLoadWeather: boolean;
+  onLoadWeather: () => Promise<WeatherFormValue>;
+  onChange: (value: string) => void;
+}) {
+  const form = parseWeatherValue(value);
+  const [loadingWeather, setLoadingWeather] = useState(false);
+  const [weatherError, setWeatherError] = useState("");
+
+  const updateTempo = (period: WeatherPeriod, option: WeatherOption) => {
+    onChange(serializeWeatherValue({
+      ...form,
+      tempo: {
+        ...form.tempo,
+        [period]: option
+      }
+    }));
+  };
+
+  const updateCondicao = (period: WeatherPeriod, option: WorkConditionOption) => {
+    onChange(serializeWeatherValue({
+      ...form,
+      condicoes: {
+        ...form.condicoes,
+        [period]: option
+      }
+    }));
+  };
+
+  const updateIndice = (indicePluviometrico: string) => {
+    onChange(serializeWeatherValue({
+      ...form,
+      indicePluviometrico
+    }));
+  };
+
+  const loadWeather = async () => {
+    try {
+      setLoadingWeather(true);
+      setWeatherError("");
+      const weather = await onLoadWeather();
+      onChange(serializeWeatherValue(weather));
+    } catch (loadError) {
+      setWeatherError(loadError instanceof Error ? loadError.message : "Não foi possível buscar os dados climáticos.");
+    } finally {
+      setLoadingWeather(false);
+    }
+  };
+
+  return (
+    <div className="weather-editor">
+      <div className="weather-alert">
+        Confira as informações sugeridas. As condições reais na obra podem ser diferentes dos dados coletados pelas agências de meteorologia.
+      </div>
+      <div className="weather-actions">
+        <button className="secondary-action compact-action" type="button" disabled={disabled || loadingWeather || !canLoadWeather} onClick={() => void loadWeather()}>
+          <CloudSun size={16} />
+          {loadingWeather ? "Buscando clima..." : "Buscar clima automaticamente"}
+        </button>
+        {!canLoadWeather && <span>Cadastre as coordenadas da obra para usar a busca automática.</span>}
+      </div>
+      {weatherError && <div className="error-banner compact">{weatherError}</div>}
+      <WeatherOptionTable title="Tempo" periods={weatherPeriods} options={weatherOptions} values={form.tempo} disabled={disabled} onSelect={updateTempo} />
+      <WeatherOptionTable title="Condições de Trabalho" periods={weatherPeriods} options={workConditionOptions} values={form.condicoes} disabled={disabled} onSelect={updateCondicao} />
+      <label className="rainfall-field">
+        Índice Pluviométrico
+        <div>
+          <input disabled={disabled} type="text" value={form.indicePluviometrico} onChange={(event) => updateIndice(event.target.value)} placeholder="Ex: 12" />
+          <span>mm</span>
+        </div>
+      </label>
+    </div>
+  );
+}
+
+function WeatherOptionTable<TOption extends string>({
+  title,
+  periods,
+  options,
+  values,
+  disabled,
+  onSelect
+}: {
+  title: string;
+  periods: readonly WeatherPeriod[];
+  options: readonly TOption[];
+  values: Record<WeatherPeriod, TOption | "">;
+  disabled: boolean;
+  onSelect: (period: WeatherPeriod, option: TOption) => void;
+}) {
+  return (
+    <section className="weather-table">
+      <h4>{title}</h4>
+      <div className="weather-table-grid">
+        <span />
+        {options.map((option) => <strong key={option}>{option}</strong>)}
+        {periods.map((period) => (
+          <Fragment key={period}>
+            <strong>{period}</strong>
+            {options.map((option) => (
+              <label key={`${period}-${option}`} className="weather-choice">
+                <input disabled={disabled} type="radio" name={`${title}-${period}`} checked={values[period] === option} onChange={() => onSelect(period, option)} />
+              </label>
+            ))}
+          </Fragment>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function parseWeatherValue(value: string): WeatherFormValue {
+  const empty = emptyWeatherFormValue();
+
+  try {
+    const parsed = JSON.parse(value) as Partial<WeatherFormValue>;
+    if (parsed && typeof parsed === "object") {
+      return {
+        tempo: normalizeWeatherRecord(parsed.tempo, weatherOptions),
+        condicoes: normalizeWeatherRecord(parsed.condicoes, workConditionOptions),
+        indicePluviometrico: typeof parsed.indicePluviometrico === "string" ? parsed.indicePluviometrico : ""
+      };
+    }
+  } catch {
+    // Older reports may contain free text; keep the structured form blank.
+  }
+
+  return empty;
+}
+
+function emptyWeatherFormValue(): WeatherFormValue {
+  return {
+    tempo: {
+      Manhã: "",
+      Tarde: "",
+      Noite: ""
+    },
+    condicoes: {
+      Manhã: "",
+      Tarde: "",
+      Noite: ""
+    },
+    indicePluviometrico: ""
+  };
+}
+
+function normalizeWeatherRecord<TOption extends string>(record: unknown, options: readonly TOption[]) {
+  const result = {
+    Manhã: "",
+    Tarde: "",
+    Noite: ""
+  } as Record<WeatherPeriod, TOption | "">;
+
+  if (!record || typeof record !== "object") return result;
+
+  for (const period of weatherPeriods) {
+    const value = (record as Partial<Record<WeatherPeriod, string>>)[period];
+    result[period] = options.includes(value as TOption) ? (value as TOption) : "";
+  }
+
+  return result;
+}
+
+function serializeWeatherValue(value: WeatherFormValue) {
+  return JSON.stringify(value);
+}
+
+function formatWeatherValueForDisplay(value: string) {
+  const form = parseWeatherValue(value);
+  const hasStructuredValue = weatherPeriods.some((period) => form.tempo[period] || form.condicoes[period]) || form.indicePluviometrico.trim();
+
+  if (!hasStructuredValue) return value;
+
+  return [
+    "Tempo",
+    ...weatherPeriods.map((period) => `${period}: ${form.tempo[period] || "-"}`),
+    "",
+    "Condições de Trabalho",
+    ...weatherPeriods.map((period) => `${period}: ${form.condicoes[period] || "-"}`),
+    "",
+    `Índice Pluviométrico: ${form.indicePluviometrico || "-"} mm`
+  ].join("\n");
+}
+
+function ReportMarcoOne({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
+  return (
+    <section className="report-marco-one">
+      <div className="report-marco-one-header">
+        <h3>{title}</h3>
+        {hint && <p>{hint}</p>}
+      </div>
+      <div className="report-marco-one-body">{children}</div>
+    </section>
+  );
+}
+
+function ManualSignatureMarco({ report }: { report: Report }) {
+  return (
+    <ReportMarcoOne title={marcoOneTitles.manualSignature}>
+      <div className="manual-signature-marco">
+        <span>{report.signatureId ?? "Pendente"}</span>
+      </div>
+    </ReportMarcoOne>
+  );
+}
+
+function ActivitiesMarco({ locked, reportId, activities, laborEntries, equipmentEntries, onChange }: { locked: boolean; reportId: string; activities: ReportActivityEntry[]; laborEntries: ReportLaborEntry[]; equipmentEntries: ReportEquipmentEntry[]; onChange: (activities: ReportActivityEntry[]) => void }) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [draft, setDraft] = useState({
+    description: "",
+    quantity: 0,
+    unit: "",
+    percentComplete: 0,
+    status: "in_progress" as ReportActivityEntry["status"],
+    startTime: "",
+    endTime: "",
+    laborEntryIds: [] as string[],
+    equipmentEntryIds: [] as string[]
+  });
+
+  const resetDraft = () => {
+    setDraft({ description: "", quantity: 0, unit: "", percentComplete: 0, status: "in_progress", startTime: "", endTime: "", laborEntryIds: [], equipmentEntryIds: [] });
+    setModalOpen(false);
+  };
+
+  const toggleLinkedId = (key: "laborEntryIds" | "equipmentEntryIds", id: string) => {
+    setDraft((current) => ({ ...current, [key]: current[key].includes(id) ? current[key].filter((item) => item !== id) : [...current[key], id] }));
+  };
+
+  const addActivity = () => {
+    const description = draft.description.trim();
+    if (!description) return;
+    onChange([...activities, {
+      id: makeLocalId("activity"),
+      reportId,
+      description,
+      quantity: Math.max(0, Number(draft.quantity) || 0),
+      unit: draft.unit.trim(),
+      percentComplete: Math.max(0, Math.min(100, Number(draft.percentComplete) || 0)),
+      status: draft.status,
+      startTime: draft.startTime,
+      endTime: draft.endTime,
+      laborEntryIds: draft.laborEntryIds,
+      equipmentEntryIds: draft.equipmentEntryIds
+    }]);
+    resetDraft();
+  };
+
+  return (
+    <ReportMarcoOne title={marcoOneTitles.activities}>
+      <div className="activity-marco-header">
+        {!locked && <button className="small-primary" type="button" onClick={() => setModalOpen(true)}><Plus size={15} />Adicionar Atividade</button>}
+      </div>
+      {activities.length === 0 ? <span className="muted-text">Nenhuma atividade adicionada.</span> : (
+        <div className="activity-entry-list">
+          {activities.map((activity) => (
+            <div className="activity-entry-card" key={activity.id}>
+              <div>
+                <strong>{activity.description}</strong>
+                <span>{activitySummary(activity)}</span>
+                <small>{activityLinkSummary(activity, laborEntries, equipmentEntries)}</small>
+              </div>
+              {!locked && <button type="button" aria-label={`Remover ${activity.description}`} onClick={() => onChange(activities.filter((item) => item.id !== activity.id))}><X size={15} /></button>}
+            </div>
+          ))}
+        </div>
+      )}
+      {modalOpen && (
+        <div className="activity-modal-backdrop">
+          <div className="activity-modal" role="dialog" aria-modal="true" aria-label="Adicionar Atividade">
+            <div className="activity-modal-header">
+              <h3>Adicionar Atividade</h3>
+              <button type="button" onClick={resetDraft} aria-label="Fechar"><X size={17} /></button>
+            </div>
+            <label>Descrição da atividade<textarea rows={4} value={draft.description} onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))} placeholder="Descreva a atividade executada" /></label>
+            <div className="activity-modal-grid">
+              <label>Quantidade Realizada<input type="number" min="0" value={draft.quantity} onChange={(event) => setDraft((current) => ({ ...current, quantity: Number(event.target.value) }))} /></label>
+              <label>Unidade<input value={draft.unit} onChange={(event) => setDraft((current) => ({ ...current, unit: event.target.value }))} placeholder="Ex: m2, m3, un." /></label>
+              <label>Porcentagem (%)<input type="number" min="0" max="100" value={draft.percentComplete} onChange={(event) => setDraft((current) => ({ ...current, percentComplete: Number(event.target.value) }))} /></label>
+              <label>Status<select value={draft.status} onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value as ReportActivityEntry["status"] }))}>{activityStatusOptions.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>
+              <label>Hora de Início<input type="time" value={draft.startTime} onChange={(event) => setDraft((current) => ({ ...current, startTime: event.target.value }))} /></label>
+              <label>Hora de Fim<input type="time" value={draft.endTime} onChange={(event) => setDraft((current) => ({ ...current, endTime: event.target.value }))} /></label>
+            </div>
+            <div className="activity-link-grid">
+              <div>
+                <strong>Mão de obra vinculada</strong>
+                {laborEntries.length === 0 ? <span className="muted-text">Nenhuma mão de obra cadastrada no relatório.</span> : laborEntries.map((entry) => <label className="activity-check-option" key={entry.id}><input type="checkbox" checked={draft.laborEntryIds.includes(entry.id)} onChange={() => toggleLinkedId("laborEntryIds", entry.id)} />{entry.description} ({entry.quantity})</label>)}
+              </div>
+              <div>
+                <strong>Equipamentos vinculados</strong>
+                {equipmentEntries.length === 0 ? <span className="muted-text">Nenhum equipamento cadastrado no relatório.</span> : equipmentEntries.map((entry) => <label className="activity-check-option" key={entry.id}><input type="checkbox" checked={draft.equipmentEntryIds.includes(entry.id)} onChange={() => toggleLinkedId("equipmentEntryIds", entry.id)} />{entry.description} ({entry.quantity})</label>)}
+              </div>
+            </div>
+            <div className="button-row">
+              <button className="secondary-action" type="button" onClick={resetDraft}>Cancelar</button>
+              <button className="primary-action" type="button" onClick={addActivity}>Adicionar Atividade</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </ReportMarcoOne>
+  );
+}
+
+const activityStatusOptions: Array<[ReportActivityEntry["status"], string]> = [
+  ["started", "Iniciada"],
+  ["in_progress", "Em Andamento"],
+  ["completed", "Concluída"],
+  ["not_started", "Não Iniciada"],
+  ["paused", "Paralisada"],
+  ["not_executed", "Não Executada"]
+];
+
+function activityStatusLabel(status: ReportActivityEntry["status"]) {
+  return activityStatusOptions.find(([value]) => value === status)?.[1] ?? status;
+}
+
+function activitySummary(activity: ReportActivityEntry) {
+  const quantity = activity.quantity ? `${activity.quantity}${activity.unit ? ` ${activity.unit}` : ""}` : "Sem quantidade";
+  const time = [activity.startTime && `Início ${activity.startTime}`, activity.endTime && `Fim ${activity.endTime}`].filter(Boolean).join(" / ");
+  return `${quantity} / ${activity.percentComplete}% / ${activityStatusLabel(activity.status)}${time ? ` / ${time}` : ""}`;
+}
+
+function activityLinkSummary(activity: ReportActivityEntry, laborEntries: ReportLaborEntry[], equipmentEntries: ReportEquipmentEntry[]) {
+  const labor = activity.laborEntryIds.map((id) => laborEntries.find((entry) => entry.id === id)?.description).filter(Boolean);
+  const equipment = activity.equipmentEntryIds.map((id) => equipmentEntries.find((entry) => entry.id === id)?.description).filter(Boolean);
+  return [`Mão de obra: ${labor.length ? labor.join(", ") : "sem vínculo"}`, `Equipamentos: ${equipment.length ? equipment.join(", ") : "sem vínculo"}`].join(" / ");
+}
+
+function ReportAttachmentsPanel({ locked, enabledItems, tasks, attachments, onUpload }: { locked: boolean; enabledItems: readonly string[]; tasks: ReportTask[]; attachments: ReportAttachment[]; onUpload: (file: File, caption: string, taskId?: string) => Promise<void> }) {
   const [caption, setCaption] = useState("");
   const [taskId, setTaskId] = useState("");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const photoAttachments = attachments.filter((attachment) => attachment.attachmentType === "photo");
+  const videoAttachments = attachments.filter((attachment) => attachment.attachmentType === "video");
+  const documentAttachments = attachments.filter((attachment) => attachment.attachmentType === "document");
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -1048,26 +1472,39 @@ function ReportAttachmentsPanel({ locked, tasks, attachments, onUpload }: { lock
   }
 
   return (
-    <section className="structured-panel">
-      <div className="structured-panel-header"><h3>Fotos e anexos</h3><span>Arquivos enviados aqui ficam vinculados ao RDO e aparecem em Fotos recentes da obra.</span></div>
-      {!locked && (
-        <div className="attachment-upload-row">
-          <input placeholder="Legenda da foto ou anexo" value={caption} onChange={(event) => setCaption(event.target.value)} />
-          <select value={taskId} onChange={(event) => setTaskId(event.target.value)}>
-            <option value="">Relatorio geral</option>
-            {tasks.map((task) => <option value={task.id} key={task.id}>{task.scheduleItem || task.description}</option>)}
-          </select>
-          <label className="upload-button"><Upload size={16} />{uploading ? "Enviando..." : "Selecionar arquivo"}<input disabled={uploading} type="file" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx" onChange={(event) => void handleFileChange(event)} /></label>
-        </div>
+    <>
+      {enabledItems.includes("photo_gallery") && (
+        <ReportMarcoOne title={marcoOneTitles.photos}>
+          <AttachmentGallery attachments={photoAttachments} tasks={tasks} emptyText="Nenhuma foto vinculada a este RDO." />
+        </ReportMarcoOne>
       )}
-      {error && <div className="error-banner compact">{error}</div>}
-      <AttachmentGallery attachments={attachments} tasks={tasks} />
-    </section>
+      {enabledItems.includes("video") && (
+        <ReportMarcoOne title={marcoOneTitles.videos}>
+          <AttachmentGallery attachments={videoAttachments} tasks={tasks} emptyText="Nenhum vídeo vinculado a este RDO." />
+        </ReportMarcoOne>
+      )}
+      {enabledItems.includes("attachment") && (
+        <ReportMarcoOne title={marcoOneTitles.attachments} hint="Arquivos enviados aqui ficam vinculados ao RDO e aparecem em Fotos recentes da obra.">
+          {!locked && (
+            <div className="attachment-upload-row">
+              <input placeholder="Legenda da foto ou anexo" value={caption} onChange={(event) => setCaption(event.target.value)} />
+              <select value={taskId} onChange={(event) => setTaskId(event.target.value)}>
+                <option value="">Relatório geral</option>
+                {tasks.map((task) => <option value={task.id} key={task.id}>{task.scheduleItem || task.description}</option>)}
+              </select>
+              <label className="upload-button"><Upload size={16} />{uploading ? "Enviando..." : "Selecionar arquivo"}<input disabled={uploading} type="file" accept="image/*,video/*,.pdf,.doc,.docx,.xls,.xlsx" onChange={(event) => void handleFileChange(event)} /></label>
+            </div>
+          )}
+          {error && <div className="error-banner compact">{error}</div>}
+          <AttachmentGallery attachments={documentAttachments} tasks={tasks} emptyText="Nenhum anexo vinculado a este RDO." />
+        </ReportMarcoOne>
+      )}
+    </>
   );
 }
 
-function AttachmentGallery({ attachments, tasks = [] }: { attachments: ReportAttachment[]; tasks?: ReportTask[] }) {
-  if (attachments.length === 0) return <span className="muted-text">Nenhuma foto ou anexo vinculado a este RDO.</span>;
+function AttachmentGallery({ attachments, tasks = [], emptyText = "Nenhuma foto ou anexo vinculado a este RDO." }: { attachments: ReportAttachment[]; tasks?: ReportTask[]; emptyText?: string }) {
+  if (attachments.length === 0) return <span className="muted-text">{emptyText}</span>;
   const taskLabelById = new Map(tasks.map((task) => [task.id, task.scheduleItem || task.description]));
   return (
     <div className="attachment-grid">
@@ -1090,7 +1527,10 @@ function StructuredReportEditor({
   equipment,
   occurrences,
   checklists,
-  onChange
+  rentalCompanyOptions,
+  onChange,
+  afterEquipment,
+  afterChecklist
 }: {
   reportId: string;
   locked: boolean;
@@ -1100,15 +1540,39 @@ function StructuredReportEditor({
   equipment: CatalogItem[];
   occurrences: CatalogItem[];
   checklists: ChecklistTemplate[];
+  rentalCompanyOptions: string[];
   onChange: (updates: Partial<ReportStructuredData>) => void;
+  afterEquipment?: ReactNode;
+  afterChecklist?: ReactNode;
 }) {
   const activeLabor = labor.filter((item) => item.status === "active");
   const activeEquipment = equipment.filter((item) => item.status === "active");
   const activeOccurrences = occurrences.filter((item) => item.status === "active");
   const activeChecklists = checklists.filter((item) => item.status === "active");
+  const catalogLaborOptions: LaborFunctionOption[] = activeLabor.map((item) => ({ value: item.id, label: item.description, catalogItemId: item.id, description: item.description }));
+  const catalogLaborDescriptions = new Set(catalogLaborOptions.map((item) => item.description.toLowerCase()));
+  const customLaborOptions: LaborFunctionOption[] = Array.from(new Set(structuredData.laborEntries.map((entry) => entry.description.trim()).filter(Boolean)))
+    .filter((description) => !catalogLaborDescriptions.has(description.toLowerCase()))
+    .sort((a, b) => a.localeCompare(b, "pt-BR"))
+    .map((description) => ({ value: `custom:${description}`, label: description, description }));
+  const laborFunctionOptions = [...catalogLaborOptions, ...customLaborOptions];
 
-  const [laborDraft, setLaborDraft] = useState({ catalogItemId: activeLabor[0]?.id ?? "", description: "", quantity: 1, unit: "profissionais", notes: "" });
-  const [equipmentDraft, setEquipmentDraft] = useState({ catalogItemId: activeEquipment[0]?.id ?? "", description: "", quantity: 1, hours: 0, notes: "" });
+  const [laborDraft, setLaborDraft] = useState({ catalogItemId: activeLabor[0]?.id ?? "", description: "", quantity: 1, unit: "profissionais", sourceType: "own" as ReportLaborEntry["sourceType"], serviceProvider: "", notes: "" });
+  const [equipmentDraft, setEquipmentDraft] = useState({
+    catalogItemId: activeEquipment[0]?.id ?? "",
+    description: "",
+    quantity: 1,
+    originType: "own" as ReportEquipmentEntry["originType"],
+    originDetail: "",
+    rentalDate: "",
+    returnDeadline: "",
+    rentalCompany: "",
+    returnAlertEnabled: false,
+    returnAlertDaysBefore: 3,
+    photoDataUrl: "",
+    photoFileName: "",
+    notes: ""
+  });
   const [occurrenceDraft, setOccurrenceDraft] = useState({ catalogItemId: activeOccurrences[0]?.id ?? "", description: "", severity: "info" as ReportOccurrenceEntry["severity"], notes: "" });
   const [taskDraft, setTaskDraft] = useState({ description: "", status: "pending" as ReportTask["status"], owner: "", scheduleItem: "", startDate: "", dueDate: "", percentComplete: 0 });
 
@@ -1125,21 +1589,70 @@ function StructuredReportEditor({
   }, [occurrences]);
 
   const addLabor = () => {
-    const catalog = activeLabor.find((item) => item.id === laborDraft.catalogItemId);
-    const description = laborDraft.description.trim() || catalog?.description || "";
+    const selectedFunction = laborFunctionOptions.find((item) => item.value === laborDraft.catalogItemId);
+    const description = laborDraft.description.trim() || selectedFunction?.description || "";
     if (!description) return;
-    const entry: ReportLaborEntry = { id: makeLocalId("labor"), reportId, catalogItemId: catalog?.id, description, quantity: Number(laborDraft.quantity) || 0, unit: laborDraft.unit || "profissionais", notes: laborDraft.notes };
+    const entry: ReportLaborEntry = {
+      id: makeLocalId("labor"),
+      reportId,
+      catalogItemId: selectedFunction?.catalogItemId,
+      description,
+      quantity: Number(laborDraft.quantity) || 0,
+      unit: laborDraft.unit || "profissionais",
+      sourceType: laborDraft.sourceType,
+      serviceProvider: laborDraft.sourceType === "outsourced" ? laborDraft.serviceProvider.trim() : "",
+      notes: laborDraft.notes
+    };
     onChange({ laborEntries: [...structuredData.laborEntries, entry] });
-    setLaborDraft((current) => ({ ...current, description: "", quantity: 1, notes: "" }));
+    setLaborDraft((current) => ({ ...current, description: "", quantity: 1, serviceProvider: "", notes: "" }));
+  };
+
+  const updateLaborEntry = (id: string, updates: Partial<ReportLaborEntry>) => {
+    onChange({
+      laborEntries: structuredData.laborEntries.map((entry) => {
+        if (entry.id !== id) return entry;
+        const nextEntry = { ...entry, ...updates };
+        return {
+          ...nextEntry,
+          quantity: Math.max(0, Number(nextEntry.quantity) || 0),
+          serviceProvider: nextEntry.sourceType === "outsourced" ? nextEntry.serviceProvider ?? "" : ""
+        };
+      })
+    });
   };
 
   const addEquipment = () => {
     const catalog = activeEquipment.find((item) => item.id === equipmentDraft.catalogItemId);
     const description = equipmentDraft.description.trim() || catalog?.description || "";
     if (!description) return;
-    const entry: ReportEquipmentEntry = { id: makeLocalId("equipment"), reportId, catalogItemId: catalog?.id, description, quantity: Number(equipmentDraft.quantity) || 0, hours: Number(equipmentDraft.hours) || 0, notes: equipmentDraft.notes };
+    const entry: ReportEquipmentEntry = {
+      id: makeLocalId("equipment"),
+      reportId,
+      catalogItemId: catalog?.id,
+      description,
+      quantity: Number(equipmentDraft.quantity) || 0,
+      hours: 0,
+      originType: equipmentDraft.originType,
+      originDetail: equipmentDraft.originType === "other" ? equipmentDraft.originDetail.trim() : "",
+      rentalDate: equipmentDraft.rentalDate,
+      returnDeadline: equipmentDraft.returnDeadline,
+      rentalCompany: equipmentDraft.rentalCompany.trim(),
+      returnAlertEnabled: equipmentDraft.returnAlertEnabled,
+      returnAlertDaysBefore: Math.max(0, Number(equipmentDraft.returnAlertDaysBefore) || 0),
+      photoDataUrl: equipmentDraft.photoDataUrl,
+      photoFileName: equipmentDraft.photoFileName,
+      notes: equipmentDraft.notes
+    };
     onChange({ equipmentEntries: [...structuredData.equipmentEntries, entry] });
-    setEquipmentDraft((current) => ({ ...current, description: "", quantity: 1, hours: 0, notes: "" }));
+    setEquipmentDraft((current) => ({ ...current, description: "", quantity: 1, originDetail: "", rentalDate: "", returnDeadline: "", rentalCompany: "", returnAlertEnabled: false, returnAlertDaysBefore: 3, photoDataUrl: "", photoFileName: "", notes: "" }));
+  };
+
+  const handleEquipmentPhotoChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const dataUrl = await fileToDataUrl(file);
+    setEquipmentDraft((current) => ({ ...current, photoDataUrl: dataUrl, photoFileName: file.name }));
   };
 
   const addOccurrence = () => {
@@ -1167,20 +1680,59 @@ function StructuredReportEditor({
   return (
     <div className="structured-editor">
       {enabledItems.includes("labor") && (
-        <StructuredPanel title="Mão de obra" hint="Use uma sugestao ativa ou descreva uma nova funcao para este RDO.">
-          {!locked && <div className="structured-form-row"><label>Funcao sugerida<select value={laborDraft.catalogItemId} onChange={(event) => setLaborDraft((current) => ({ ...current, catalogItemId: event.target.value }))}><option value="">Sem sugestao</option>{activeLabor.map((item) => <option value={item.id} key={item.id}>{item.description}</option>)}</select></label><label>Nova funcao<input placeholder="Ex: Carpinteiro" value={laborDraft.description} onChange={(event) => setLaborDraft((current) => ({ ...current, description: event.target.value }))} /></label><label>Quantidade<input type="number" min="0" value={laborDraft.quantity} onChange={(event) => setLaborDraft((current) => ({ ...current, quantity: Number(event.target.value) }))} /></label><button className="small-primary" type="button" onClick={addLabor}><Plus size={15} />Adicionar</button></div>}
-          <StructuredRows rows={structuredData.laborEntries.map((entry) => ({ id: entry.id, main: entry.description, meta: `${entry.quantity} ${entry.unit}${entry.notes ? ` / ${entry.notes}` : ""}` }))} locked={locked} onRemove={(id) => onChange({ laborEntries: structuredData.laborEntries.filter((entry) => entry.id !== id) })} />
+        <StructuredPanel title="Mão de obra" hint="Use uma sugestão ativa ou descreva uma nova função para este RDO.">
+          {!locked && (
+            <div className="structured-form-row labor-form-row">
+              <label>Função<select value={laborDraft.catalogItemId} onChange={(event) => setLaborDraft((current) => ({ ...current, catalogItemId: event.target.value, description: event.target.value ? "" : current.description }))}><option value="">Outra</option>{laborFunctionOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}</select></label>
+              {!laborDraft.catalogItemId && <label>Nova Função<input placeholder="Ex: Carpinteiro" value={laborDraft.description} onChange={(event) => setLaborDraft((current) => ({ ...current, description: event.target.value }))} /></label>}
+              <label>Quantidade<input type="number" min="0" value={laborDraft.quantity} onChange={(event) => setLaborDraft((current) => ({ ...current, quantity: Number(event.target.value) }))} /></label>
+              <label>Origem<select value={laborDraft.sourceType} onChange={(event) => setLaborDraft((current) => ({ ...current, sourceType: event.target.value as ReportLaborEntry["sourceType"], serviceProvider: event.target.value === "own" ? "" : current.serviceProvider }))}><option value="own">Própria</option><option value="outsourced">Terceirizada</option></select></label>
+              {laborDraft.sourceType === "outsourced" && <label>Empresa prestadora<input placeholder="Ex: Prestadora ABC" value={laborDraft.serviceProvider} onChange={(event) => setLaborDraft((current) => ({ ...current, serviceProvider: event.target.value }))} /></label>}
+              <button className="small-primary" type="button" onClick={addLabor}><Plus size={15} />Adicionar</button>
+            </div>
+          )}
+          <LaborEntryEditor entries={structuredData.laborEntries} functionOptions={laborFunctionOptions} locked={locked} onUpdate={updateLaborEntry} onRemove={(id) => onChange({ laborEntries: structuredData.laborEntries.filter((entry) => entry.id !== id) })} />
         </StructuredPanel>
       )}
       {enabledItems.includes("equipment") && (
-        <StructuredPanel title="Equipamentos" hint="Registre equipamento, quantidade e horas de uso no dia.">
-          {!locked && <div className="structured-form-row"><label>Equipamento sugerido<select value={equipmentDraft.catalogItemId} onChange={(event) => setEquipmentDraft((current) => ({ ...current, catalogItemId: event.target.value }))}><option value="">Sem sugestao</option>{activeEquipment.map((item) => <option value={item.id} key={item.id}>{item.description}</option>)}</select></label><label>Novo equipamento<input placeholder="Ex: Serra circular" value={equipmentDraft.description} onChange={(event) => setEquipmentDraft((current) => ({ ...current, description: event.target.value }))} /></label><label>Quantidade<input type="number" min="0" value={equipmentDraft.quantity} onChange={(event) => setEquipmentDraft((current) => ({ ...current, quantity: Number(event.target.value) }))} /></label><label>Horas<input type="number" min="0" value={equipmentDraft.hours} onChange={(event) => setEquipmentDraft((current) => ({ ...current, hours: Number(event.target.value) }))} /></label><button className="small-primary" type="button" onClick={addEquipment}><Plus size={15} />Adicionar</button></div>}
-          <StructuredRows rows={structuredData.equipmentEntries.map((entry) => ({ id: entry.id, main: entry.description, meta: `${entry.quantity} un. / ${entry.hours}h${entry.notes ? ` / ${entry.notes}` : ""}` }))} locked={locked} onRemove={(id) => onChange({ equipmentEntries: structuredData.equipmentEntries.filter((entry) => entry.id !== id) })} />
+        <StructuredPanel title="Equipamentos" hint="Registre equipamento, quantidade, origem e dados de locação quando houver.">
+          {!locked && (
+            <div className="equipment-form">
+              <div className="structured-form-row equipment-form-row">
+                <label>Equipamento<select value={equipmentDraft.catalogItemId} onChange={(event) => setEquipmentDraft((current) => ({ ...current, catalogItemId: event.target.value, description: event.target.value ? "" : current.description }))}><option value="">Outro</option>{activeEquipment.map((item) => <option value={item.id} key={item.id}>{item.description}</option>)}</select></label>
+                {!equipmentDraft.catalogItemId && <label>Novo Equipamento<input placeholder="Ex: Serra circular" value={equipmentDraft.description} onChange={(event) => setEquipmentDraft((current) => ({ ...current, description: event.target.value }))} /></label>}
+                <label>Quantidade<input type="number" min="0" value={equipmentDraft.quantity} onChange={(event) => setEquipmentDraft((current) => ({ ...current, quantity: Number(event.target.value) }))} /></label>
+                <label>Origem<select value={equipmentDraft.originType} onChange={(event) => setEquipmentDraft((current) => ({ ...current, originType: event.target.value as ReportEquipmentEntry["originType"], originDetail: event.target.value === "other" ? current.originDetail : "" }))}><option value="own">Próprio</option><option value="rented">Alugado</option><option value="other">Outro</option></select></label>
+                {equipmentDraft.originType === "other" && <label>Especificar origem<input placeholder="Ex: Cedido pelo cliente" value={equipmentDraft.originDetail} onChange={(event) => setEquipmentDraft((current) => ({ ...current, originDetail: event.target.value }))} /></label>}
+              </div>
+              <div className="structured-form-row equipment-form-row">
+                <label>Data da Locação<input type="date" value={equipmentDraft.rentalDate} onChange={(event) => setEquipmentDraft((current) => ({ ...current, rentalDate: event.target.value }))} /></label>
+                <label>Prazo de Devolução<input type="date" value={equipmentDraft.returnDeadline} onChange={(event) => setEquipmentDraft((current) => ({ ...current, returnDeadline: event.target.value }))} /></label>
+                <label>Locadora<input list={`rental-companies-${reportId}`} placeholder="Nome da locadora" value={equipmentDraft.rentalCompany} onChange={(event) => setEquipmentDraft((current) => ({ ...current, rentalCompany: event.target.value }))} /></label>
+                <datalist id={`rental-companies-${reportId}`}>{rentalCompanyOptions.map((company) => <option value={company} key={company} />)}</datalist>
+                <label className="checkbox-field"><input type="checkbox" checked={equipmentDraft.returnAlertEnabled} onChange={(event) => setEquipmentDraft((current) => ({ ...current, returnAlertEnabled: event.target.checked }))} />Emitir notificação de prazo de devolução?</label>
+                {equipmentDraft.returnAlertEnabled && <label>Dias de antecedência<input type="number" min="0" value={equipmentDraft.returnAlertDaysBefore} onChange={(event) => setEquipmentDraft((current) => ({ ...current, returnAlertDaysBefore: Number(event.target.value) }))} /></label>}
+              </div>
+              <div className="equipment-photo-row">
+                <label className="upload-button"><Camera size={16} />{equipmentDraft.photoFileName || "Foto do equipamento"}<input type="file" accept="image/*" onChange={(event) => void handleEquipmentPhotoChange(event)} /></label>
+                {equipmentDraft.photoDataUrl && <figure className="equipment-photo-preview"><img src={equipmentDraft.photoDataUrl} alt={equipmentDraft.photoFileName || "Foto do equipamento"} /><button type="button" onClick={() => setEquipmentDraft((current) => ({ ...current, photoDataUrl: "", photoFileName: "" }))}><X size={14} /></button></figure>}
+                <button className="small-primary" type="button" onClick={addEquipment}><Plus size={15} />Adicionar</button>
+              </div>
+            </div>
+          )}
+          <EquipmentEntryList
+            entries={structuredData.equipmentEntries}
+            locked={locked}
+            rentalCompanyOptions={rentalCompanyOptions}
+            onUpdate={(id, updates) => onChange({ equipmentEntries: structuredData.equipmentEntries.map((entry) => entry.id === id ? normalizeEquipmentEntryUpdate({ ...entry, ...updates }) : entry) })}
+            onRemove={(id) => onChange({ equipmentEntries: structuredData.equipmentEntries.filter((entry) => entry.id !== id) })}
+          />
         </StructuredPanel>
       )}
+      {afterEquipment}
       {enabledItems.includes("occurrence") && (
         <StructuredPanel title="Ocorrências" hint="Classifique impedimentos, desvios ou alertas registrados no RDO.">
-          {!locked && <div className="structured-form-row"><label>Tipo sugerido<select value={occurrenceDraft.catalogItemId} onChange={(event) => setOccurrenceDraft((current) => ({ ...current, catalogItemId: event.target.value }))}><option value="">Sem sugestao</option>{activeOccurrences.map((item) => <option value={item.id} key={item.id}>{item.description}</option>)}</select></label><label>Nova ocorrencia<input placeholder="Ex: Atraso de fornecedor" value={occurrenceDraft.description} onChange={(event) => setOccurrenceDraft((current) => ({ ...current, description: event.target.value }))} /></label><label>Criticidade<select value={occurrenceDraft.severity} onChange={(event) => setOccurrenceDraft((current) => ({ ...current, severity: event.target.value as ReportOccurrenceEntry["severity"] }))}><option value="info">Informativa</option><option value="attention">Atencao</option><option value="critical">Critica</option></select></label><button className="small-primary" type="button" onClick={addOccurrence}><Plus size={15} />Adicionar</button></div>}
+          {!locked && <div className="structured-form-row"><label>Tipo sugerido<select value={occurrenceDraft.catalogItemId} onChange={(event) => setOccurrenceDraft((current) => ({ ...current, catalogItemId: event.target.value }))}><option value="">Sem sugestão</option>{activeOccurrences.map((item) => <option value={item.id} key={item.id}>{item.description}</option>)}</select></label><label>Nova ocorrência<input placeholder="Ex: Atraso de fornecedor" value={occurrenceDraft.description} onChange={(event) => setOccurrenceDraft((current) => ({ ...current, description: event.target.value }))} /></label><label>Criticidade<select value={occurrenceDraft.severity} onChange={(event) => setOccurrenceDraft((current) => ({ ...current, severity: event.target.value as ReportOccurrenceEntry["severity"] }))}><option value="info">Informativa</option><option value="attention">Atenção</option><option value="critical">Crítica</option></select></label><button className="small-primary" type="button" onClick={addOccurrence}><Plus size={15} />Adicionar</button></div>}
           <StructuredRows rows={structuredData.occurrenceEntries.map((entry) => ({ id: entry.id, main: entry.description, meta: `${occurrenceSeverityLabel(entry.severity)}${entry.notes ? ` / ${entry.notes}` : ""}` }))} locked={locked} onRemove={(id) => onChange({ occurrenceEntries: structuredData.occurrenceEntries.filter((entry) => entry.id !== id) })} />
         </StructuredPanel>
       )}
@@ -1202,16 +1754,190 @@ function StructuredReportEditor({
           </div>
         </StructuredPanel>
       )}
-      <StructuredPanel title="Lista de tarefas" hint="Pendencias criadas aqui alimentam a aba Analise de dados > Lista de tarefas.">
-        {!locked && <div className="structured-form-row task-form-row"><label>Tarefa<input placeholder="Nova tarefa" value={taskDraft.description} onChange={(event) => setTaskDraft((current) => ({ ...current, description: event.target.value }))} /></label><label>Item do cronograma<input placeholder="Ex: Alvenaria pav. 2" value={taskDraft.scheduleItem} onChange={(event) => setTaskDraft((current) => ({ ...current, scheduleItem: event.target.value }))} /></label><label>Status<select value={taskDraft.status} onChange={(event) => setTaskDraft((current) => ({ ...current, status: event.target.value as ReportTask["status"] }))}><option value="pending">Pendente</option><option value="in_progress">Em andamento</option><option value="completed">Concluida</option></select></label><label>Responsavel<input placeholder="Responsavel" value={taskDraft.owner} onChange={(event) => setTaskDraft((current) => ({ ...current, owner: event.target.value }))} /></label><label>Inicio<input type="date" value={taskDraft.startDate} onChange={(event) => setTaskDraft((current) => ({ ...current, startDate: event.target.value }))} /></label><label>Prazo<input type="date" value={taskDraft.dueDate} onChange={(event) => setTaskDraft((current) => ({ ...current, dueDate: event.target.value }))} /></label><label>% concluido<input type="number" min="0" max="100" value={taskDraft.percentComplete} onChange={(event) => setTaskDraft((current) => ({ ...current, percentComplete: Number(event.target.value) }))} /></label><button className="small-primary" type="button" onClick={addTask}><Plus size={15} />Adicionar</button></div>}
-        <StructuredRows rows={structuredData.tasks.map((task) => ({ id: task.id, main: task.scheduleItem ? `${task.scheduleItem} - ${task.description}` : task.description, meta: `${taskStatusLabel(task.status)} / ${task.percentComplete ?? 0}%${task.owner ? ` / ${task.owner}` : ""}${task.startDate ? ` / Inicio ${formatDate(task.startDate)}` : ""}${task.dueDate ? ` / Prazo ${formatDate(task.dueDate)}` : ""}` }))} locked={locked} onRemove={(id) => onChange({ tasks: structuredData.tasks.filter((task) => task.id !== id) })} />
+      {afterChecklist}
+      <StructuredPanel title="Lista de tarefas" hint="Pendências criadas aqui alimentam a aba Análise de dados > Lista de tarefas.">
+        {!locked && <div className="structured-form-row task-form-row"><label>Tarefa<input placeholder="Nova tarefa" value={taskDraft.description} onChange={(event) => setTaskDraft((current) => ({ ...current, description: event.target.value }))} /></label><label>Item do cronograma<input placeholder="Ex: Alvenaria pav. 2" value={taskDraft.scheduleItem} onChange={(event) => setTaskDraft((current) => ({ ...current, scheduleItem: event.target.value }))} /></label><label>Status<select value={taskDraft.status} onChange={(event) => setTaskDraft((current) => ({ ...current, status: event.target.value as ReportTask["status"] }))}><option value="pending">Pendente</option><option value="in_progress">Em andamento</option><option value="completed">Concluída</option></select></label><label>Responsável<input placeholder="Responsável" value={taskDraft.owner} onChange={(event) => setTaskDraft((current) => ({ ...current, owner: event.target.value }))} /></label><label>Início<input type="date" value={taskDraft.startDate} onChange={(event) => setTaskDraft((current) => ({ ...current, startDate: event.target.value }))} /></label><label>Prazo<input type="date" value={taskDraft.dueDate} onChange={(event) => setTaskDraft((current) => ({ ...current, dueDate: event.target.value }))} /></label><label>% concluído<input type="number" min="0" max="100" value={taskDraft.percentComplete} onChange={(event) => setTaskDraft((current) => ({ ...current, percentComplete: Number(event.target.value) }))} /></label><button className="small-primary" type="button" onClick={addTask}><Plus size={15} />Adicionar</button></div>}
+        <StructuredRows rows={structuredData.tasks.map((task) => ({ id: task.id, main: task.scheduleItem ? `${task.scheduleItem} - ${task.description}` : task.description, meta: `${taskStatusLabel(task.status)} / ${task.percentComplete ?? 0}%${task.owner ? ` / ${task.owner}` : ""}${task.startDate ? ` / Início ${formatDate(task.startDate)}` : ""}${task.dueDate ? ` / Prazo ${formatDate(task.dueDate)}` : ""}` }))} locked={locked} onRemove={(id) => onChange({ tasks: structuredData.tasks.filter((task) => task.id !== id) })} />
       </StructuredPanel>
     </div>
   );
 }
 
 function StructuredPanel({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
-  return <section className="structured-panel"><div className="structured-panel-header"><h3>{title}</h3>{hint && <span>{hint}</span>}</div>{children}</section>;
+  return <ReportMarcoOne title={title} hint={hint}>{children}</ReportMarcoOne>;
+}
+
+function LaborEntryEditor({ entries, functionOptions, locked, onUpdate, onRemove }: { entries: ReportLaborEntry[]; functionOptions: LaborFunctionOption[]; locked: boolean; onUpdate: (id: string, updates: Partial<ReportLaborEntry>) => void; onRemove: (id: string) => void }) {
+  const [editingId, setEditingId] = useState("");
+  const [customFunctionIds, setCustomFunctionIds] = useState<string[]>([]);
+  if (entries.length === 0) return <span className="muted-text">Nenhuma mão de obra informada.</span>;
+
+  if (locked) {
+    return (
+      <div className="structured-row-list">
+        {entries.map((entry) => (
+          <div className="structured-row" key={entry.id}>
+            <strong>{entry.description}</strong>
+            <span>{laborEntrySummary(entry)}</span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="labor-entry-list">
+      {entries.map((entry) => (
+        <div className={`labor-entry-row ${editingId === entry.id ? "editing" : ""}`} key={entry.id}>
+          <div className="labor-entry-card-header">
+            <strong>{entry.description}</strong>
+            <button type="button" aria-label={`Editar ${entry.description}`} title="Editar mão de obra" onClick={() => setEditingId((current) => current === entry.id ? "" : entry.id)}><Edit3 size={15} /></button>
+          </div>
+          {editingId === entry.id ? (
+            <>
+              <label>Função<select value={customFunctionIds.includes(entry.id) ? "" : laborEntryFunctionValue(entry, functionOptions)} onChange={(event) => {
+                const option = functionOptions.find((item) => item.value === event.target.value);
+                setCustomFunctionIds((current) => event.target.value ? current.filter((id) => id !== entry.id) : [...new Set([...current, entry.id])]);
+                onUpdate(entry.id, option ? { catalogItemId: option.catalogItemId, description: option.description } : { catalogItemId: undefined });
+              }}><option value="">Outra</option>{functionOptions.map((item) => <option value={item.value} key={item.value}>{item.label}</option>)}</select></label>
+              {(customFunctionIds.includes(entry.id) || !laborEntryFunctionValue(entry, functionOptions)) && <label>Nova Função<input value={entry.description} onChange={(event) => onUpdate(entry.id, { catalogItemId: undefined, description: event.target.value })} placeholder="Ex: Carpinteiro" /></label>}
+              <label>Quantidade<input type="number" min="0" value={entry.quantity} onChange={(event) => onUpdate(entry.id, { quantity: Number(event.target.value) })} /></label>
+              <label>Origem<select value={entry.sourceType ?? "own"} onChange={(event) => onUpdate(entry.id, { sourceType: event.target.value as ReportLaborEntry["sourceType"], serviceProvider: event.target.value === "own" ? "" : entry.serviceProvider })}><option value="own">Própria</option><option value="outsourced">Terceirizada</option></select></label>
+              {(entry.sourceType ?? "own") === "outsourced" && <label>Empresa prestadora<input value={entry.serviceProvider ?? ""} onChange={(event) => onUpdate(entry.id, { serviceProvider: event.target.value })} placeholder="Nome da empresa" /></label>}
+              <button type="button" aria-label={`Remover ${entry.description}`} onClick={() => onRemove(entry.id)}><X size={15} /></button>
+            </>
+          ) : (
+            <span className="labor-entry-read-summary">{laborEntrySummary(entry)}</span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function laborEntrySummary(entry: ReportLaborEntry) {
+  const sourceLabel = entry.sourceType === "outsourced" ? `Terceirizada${entry.serviceProvider ? ` - ${entry.serviceProvider}` : ""}` : "Própria";
+  return `${entry.quantity} ${entry.unit} / ${sourceLabel}${entry.notes ? ` / ${entry.notes}` : ""}`;
+}
+
+function laborEntryFunctionValue(entry: ReportLaborEntry, options: LaborFunctionOption[]) {
+  if (entry.catalogItemId && options.some((option) => option.value === entry.catalogItemId)) return entry.catalogItemId;
+  const customOption = options.find((option) => option.description.toLowerCase() === entry.description.trim().toLowerCase());
+  return customOption?.value ?? "";
+}
+
+function EquipmentEntryList({ entries, locked, rentalCompanyOptions, onUpdate, onRemove }: { entries: ReportEquipmentEntry[]; locked: boolean; rentalCompanyOptions: string[]; onUpdate: (id: string, updates: Partial<ReportEquipmentEntry>) => void; onRemove: (id: string) => void }) {
+  const [editingId, setEditingId] = useState("");
+  if (entries.length === 0) return <span className="muted-text">Nenhum equipamento informado.</span>;
+
+  const handlePhotoChange = async (entryId: string, event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const dataUrl = await fileToDataUrl(file);
+    onUpdate(entryId, { photoDataUrl: dataUrl, photoFileName: file.name });
+  };
+
+  return (
+    <div className="equipment-entry-list">
+      {entries.map((entry) => {
+        const alert = equipmentReturnAlert(entry);
+        const editing = editingId === entry.id;
+        const rentalCompanyListId = `rental-companies-${entry.id}`;
+        return (
+          <div className={`equipment-entry-card ${editing ? "editing" : ""} ${alert.level ? `equipment-alert-${alert.level}` : ""}`} key={entry.id}>
+            <div className="equipment-entry-card-header">
+              <strong>{entry.description}</strong>
+              <div className="equipment-entry-actions">
+                {!locked && <button type="button" aria-label={`Editar ${entry.description}`} title="Editar equipamento" onClick={() => setEditingId((current) => current === entry.id ? "" : entry.id)}><Edit3 size={15} /></button>}
+              </div>
+            </div>
+            {editing ? (
+              <>
+                <label>Equipamento<input value={entry.description} onChange={(event) => onUpdate(entry.id, { catalogItemId: undefined, description: event.target.value })} placeholder="Nome do equipamento" /></label>
+                <label>Quantidade<input type="number" min="0" value={entry.quantity} onChange={(event) => onUpdate(entry.id, { quantity: Number(event.target.value) })} /></label>
+                <label>Origem<select value={entry.originType ?? "own"} onChange={(event) => onUpdate(entry.id, { originType: event.target.value as ReportEquipmentEntry["originType"], originDetail: event.target.value === "other" ? entry.originDetail : "" })}><option value="own">Próprio</option><option value="rented">Alugado</option><option value="other">Outro</option></select></label>
+                {(entry.originType ?? "own") === "other" && <label>Especificar origem<input value={entry.originDetail ?? ""} onChange={(event) => onUpdate(entry.id, { originDetail: event.target.value })} placeholder="Ex: Cedido pelo cliente" /></label>}
+                <label>Data da Locação<input type="date" value={entry.rentalDate ?? ""} onChange={(event) => onUpdate(entry.id, { rentalDate: event.target.value })} /></label>
+                <label>Prazo de Devolução<input type="date" value={entry.returnDeadline ?? ""} onChange={(event) => onUpdate(entry.id, { returnDeadline: event.target.value })} /></label>
+                <label>Locadora<input list={rentalCompanyListId} value={entry.rentalCompany ?? ""} onChange={(event) => onUpdate(entry.id, { rentalCompany: event.target.value })} placeholder="Nome da locadora" /></label>
+                <datalist id={rentalCompanyListId}>{rentalCompanyOptions.map((company) => <option value={company} key={company} />)}</datalist>
+                <label className="checkbox-field"><input type="checkbox" checked={Boolean(entry.returnAlertEnabled)} onChange={(event) => onUpdate(entry.id, { returnAlertEnabled: event.target.checked })} />Emitir notificação de prazo de devolução?</label>
+                {entry.returnAlertEnabled && <label>Dias de antecedência<input type="number" min="0" value={entry.returnAlertDaysBefore ?? 0} onChange={(event) => onUpdate(entry.id, { returnAlertDaysBefore: Number(event.target.value) })} /></label>}
+                <div className="equipment-edit-photo-row">
+                  <label className="upload-button"><Camera size={16} />{entry.photoFileName || "Foto do equipamento"}<input type="file" accept="image/*" onChange={(event) => void handlePhotoChange(entry.id, event)} /></label>
+                  {entry.photoDataUrl && <button type="button" onClick={() => onUpdate(entry.id, { photoDataUrl: "", photoFileName: "" })}><X size={15} /></button>}
+                </div>
+                <button type="button" aria-label={`Remover ${entry.description}`} onClick={() => onRemove(entry.id)}><X size={15} /></button>
+              </>
+            ) : (
+              <>
+                {entry.photoDataUrl ? <img className="equipment-entry-photo" src={entry.photoDataUrl} alt={entry.photoFileName || entry.description} /> : <div className="equipment-entry-photo placeholder"><Wrench size={24} /></div>}
+                <div className="equipment-entry-content">
+                  <div className="equipment-entry-header">
+                    {alert.message && <span className={`equipment-alert-badge ${alert.level ?? ""}`}>{alert.message}</span>}
+                  </div>
+                  <span>{equipmentEntrySummary(entry)}</span>
+                  {(entry.rentalDate || entry.returnDeadline || entry.rentalCompany) && <small>{equipmentRentalSummary(entry)}</small>}
+                  {entry.photoFileName && <small>Foto: {entry.photoFileName}</small>}
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function normalizeEquipmentEntryUpdate(entry: ReportEquipmentEntry): ReportEquipmentEntry {
+  return {
+    ...entry,
+    quantity: Math.max(0, Number(entry.quantity) || 0),
+    hours: 0,
+    originDetail: entry.originType === "other" ? entry.originDetail ?? "" : "",
+    returnAlertDaysBefore: Math.max(0, Number(entry.returnAlertDaysBefore) || 0)
+  };
+}
+
+function equipmentEntrySummary(entry: ReportEquipmentEntry) {
+  const origin = equipmentOriginLabel(entry);
+  return `${entry.quantity} un. / ${origin}${entry.notes ? ` / ${entry.notes}` : ""}`;
+}
+
+function equipmentOriginLabel(entry: ReportEquipmentEntry) {
+  if (entry.originType === "rented") return "Alugado";
+  if (entry.originType === "other") return entry.originDetail ? `Outro - ${entry.originDetail}` : "Outro";
+  return "Próprio";
+}
+
+function equipmentRentalSummary(entry: ReportEquipmentEntry) {
+  const parts = [];
+  if (entry.rentalDate) parts.push(`Locação ${formatDate(entry.rentalDate)}`);
+  if (entry.returnDeadline) parts.push(`Devolução ${formatDate(entry.returnDeadline)}`);
+  if (entry.rentalCompany) parts.push(`Locadora ${entry.rentalCompany}`);
+  return parts.join(" / ");
+}
+
+function equipmentReturnAlert(entry: ReportEquipmentEntry): { level?: "warning" | "danger"; message?: string } {
+  if (!entry.returnAlertEnabled || !entry.returnDeadline) return {};
+  const today = startOfLocalDay(new Date());
+  const deadline = parseDateOnly(entry.returnDeadline);
+  if (!deadline) return {};
+  const daysUntilDeadline = Math.ceil((deadline.getTime() - today.getTime()) / 86400000);
+  if (daysUntilDeadline < 0) return { level: "danger", message: "Prazo de devolução ultrapassado" };
+  if (daysUntilDeadline <= Math.max(0, Number(entry.returnAlertDaysBefore) || 0)) return { level: "warning", message: `Devolução em ${daysUntilDeadline} dia(s)` };
+  return {};
+}
+
+function parseDateOnly(value: string) {
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return undefined;
+  return new Date(year, month - 1, day);
+}
+
+function startOfLocalDay(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
 }
 
 function StructuredRows({ rows, locked, onRemove }: { rows: Array<{ id: string; main: string; meta: string }>; locked: boolean; onRemove: (id: string) => void }) {
@@ -1300,6 +2026,7 @@ function AppModal(props: {
 function ProjectModal({ title, project, projectGroups, onClose, onSave }: { title: string; project?: Project; projectGroups: CatalogItem[]; onClose: () => void; onSave: (payload: CreateProjectPayload) => Promise<void> }) {
   const [mode, setMode] = useState<"complete" | "simple">("complete");
   const [saving, setSaving] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [error, setError] = useState("");
   const [form, setForm] = useState<CreateProjectPayload>({
     name: project?.name ?? "",
@@ -1307,6 +2034,8 @@ function ProjectModal({ title, project, projectGroups, onClose, onSave }: { titl
     contractor: project?.contractor ?? "",
     contract: project?.contract ?? "",
     address: project?.address ?? "",
+    latitude: project?.latitude ?? "",
+    longitude: project?.longitude ?? "",
     startDate: project?.startDate ?? "",
     expectedEndDate: project?.expectedEndDate ?? "",
     group: project?.group ?? "Todas as obras",
@@ -1321,6 +2050,34 @@ function ProjectModal({ title, project, projectGroups, onClose, onSave }: { titl
     ? activeProjectGroups
     : [{ id: "current-project-group", description: form.group || "Todas as obras", status: "active", sourceType: "customized" } as CatalogItem, ...activeProjectGroups];
   const update = <K extends keyof CreateProjectPayload>(key: K, value: CreateProjectPayload[K]) => setForm((current) => ({ ...current, [key]: value }));
+
+  async function useCurrentLocation() {
+    if (!navigator.geolocation) {
+      setError("Este navegador não oferece suporte à localização automática.");
+      return;
+    }
+
+    try {
+      setLocating(true);
+      setError("");
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 12000,
+          maximumAge: 60000
+        });
+      });
+      setForm((current) => ({
+        ...current,
+        latitude: position.coords.latitude.toFixed(6),
+        longitude: position.coords.longitude.toFixed(6)
+      }));
+    } catch (locationError) {
+      setError(locationError instanceof Error ? locationError.message : "Não foi possível obter a localização atual.");
+    } finally {
+      setLocating(false);
+    }
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1366,6 +2123,19 @@ function ProjectModal({ title, project, projectGroups, onClose, onSave }: { titl
         )}
         <label>Endereço</label>
         <input placeholder="Ex: Av. ABC, 100, Centro" value={form.address ?? ""} onChange={(event) => update("address", event.target.value)} />
+        <div className="coordinate-block">
+          <div className="coordinate-header">
+            <strong>Coordenadas da obra</strong>
+            <button className="secondary-action compact-action" type="button" disabled={locating} onClick={() => void useCurrentLocation()}>
+              <LocateFixed size={16} />
+              {locating ? "Localizando..." : "Usar localização atual"}
+            </button>
+          </div>
+          <div className="form-grid simple">
+            <Field label="Latitude" value={form.latitude ?? ""} onChange={(value) => update("latitude", value)} placeholder="-23.550520" />
+            <Field label="Longitude" value={form.longitude ?? ""} onChange={(value) => update("longitude", value)} placeholder="-46.633308" />
+          </div>
+        </div>
         <div className="inline-checks">
           <label className="check-line"><input type="checkbox" checked={Boolean(form.taskListEnabled)} onChange={(event) => update("taskListEnabled", event.target.checked)} /> Lista de tarefas</label>
           <label className="check-line"><input type="checkbox" checked={Boolean(form.requirePhotos)} onChange={(event) => update("requirePhotos", event.target.checked)} /> Exigir fotos no RDO</label>
@@ -1419,7 +2189,7 @@ function UserModal({ user, onClose, onSave }: { user?: AppUser; onClose: () => v
     <SimpleFormModal title={user ? "Editar usuário" : "Adicionar usuário"} onClose={onClose} onSave={() => onSave(form)}>
       <Field label="Nome *" value={form.name} onChange={(value) => setForm((current) => ({ ...current, name: value }))} />
       <Field label="E-mail de acesso *" value={form.email} onChange={(value) => setForm((current) => ({ ...current, email: value }))} type="email" />
-      <Field label={user ? "Nova senha" : "Senha inicial *"} value={form.password ?? ""} onChange={(value) => setForm((current) => ({ ...current, password: value }))} type="password" placeholder={user ? "Preencha apenas para trocar" : "Minimo 8 caracteres com letras e numeros"} />
+      <Field label={user ? "Nova senha" : "Senha inicial *"} value={form.password ?? ""} onChange={(value) => setForm((current) => ({ ...current, password: value }))} type="password" placeholder={user ? "Preencha apenas para trocar" : "Mínimo 8 caracteres com letras e números"} />
       <Field label="Cargo" value={form.jobTitle} onChange={(value) => setForm((current) => ({ ...current, jobTitle: value }))} />
       <SelectField label="Perfil de acesso" value={form.accessProfile} onChange={(value) => setForm((current) => ({ ...current, accessProfile: value as AccessProfile }))} options={[["administrator", "Administrador"], ["customized", "Customizado"], ["field_user", "Campo"], ["reviewer_approver", "Revisor/Aprovador"], ["client_read_only", "Cliente leitura"]]} />
       <SelectField label="Status" value={form.status} onChange={(value) => setForm((current) => ({ ...current, status: value as "active" | "inactive" }))} options={[["active", "Ativo"], ["inactive", "Inativo"]]} />
@@ -1626,7 +2396,7 @@ function CatalogSettings({ title, kind, icon: Icon, items, onOpenModal, onToggle
         <div className="table-list">
           {visibleItems.map((item) => <div className="table-row" key={item.id}><Icon size={16} /><label className="catalog-toggle"><input type="checkbox" checked={item.status === "active"} onChange={(event) => void onToggleCatalog(kind, item, event.target.checked)} /> {item.description}</label><span>{item.group ?? ""}</span><button onClick={() => onOpenModal({ type: "catalog", kind, item })}><Edit3 size={16} /></button></div>)}
         </div>
-        {visibleItems.length === 0 && <EmptyState icon={Icon} title="Nenhum item encontrado" text="Ajuste a busca, o status ou adicione uma nova sugestao de cadastro." />}
+        {visibleItems.length === 0 && <EmptyState icon={Icon} title="Nenhum item encontrado" text="Ajuste a busca, o status ou adicione uma nova sugestão de cadastro." />}
       </section>
     </section>
   );
@@ -1673,8 +2443,9 @@ function AnalysisPage({ view, reports, projects, onOpenReport, onNavigate }: { v
   const [dataType, setDataType] = useState("all");
   const taskRows = reports.flatMap((report) => report.structuredData.tasks.map((task) => ({ report, task })));
   const insertedRows = reports.flatMap((report) => [
-    ...report.structuredData.laborEntries.map((entry) => ({ report, type: "Mão de obra", description: entry.description, value: `${entry.quantity} ${entry.unit}` })),
-    ...report.structuredData.equipmentEntries.map((entry) => ({ report, type: "Equipamento", description: entry.description, value: `${entry.quantity} un. / ${entry.hours}h` })),
+    ...report.structuredData.laborEntries.map((entry) => ({ report, type: "Mão de obra", description: entry.description, value: laborEntrySummary(entry) })),
+    ...report.structuredData.equipmentEntries.map((entry) => ({ report, type: "Equipamento", description: entry.description, value: equipmentEntrySummary(entry) })),
+    ...report.structuredData.activityEntries.map((entry) => ({ report, type: "Atividade", description: entry.description, value: activitySummary(entry) })),
     ...report.structuredData.occurrenceEntries.map((entry) => ({ report, type: "Ocorrência", description: entry.description, value: occurrenceSeverityLabel(entry.severity) })),
     ...report.structuredData.checklistResponses.map((entry) => ({ report, type: "Checklist", description: entry.question, value: entry.answer })),
     ...report.structuredData.tasks.map((task) => ({ report, type: "Tarefa", description: task.scheduleItem ? `${task.scheduleItem} - ${task.description}` : task.description, value: `${taskStatusLabel(task.status)} / ${task.percentComplete ?? 0}%` }))
@@ -1684,6 +2455,7 @@ function AnalysisPage({ view, reports, projects, onOpenReport, onNavigate }: { v
     const structuredText = [
       ...report.structuredData.laborEntries.map((entry) => entry.description),
       ...report.structuredData.equipmentEntries.map((entry) => entry.description),
+      ...report.structuredData.activityEntries.map((entry) => entry.description),
       ...report.structuredData.occurrenceEntries.map((entry) => entry.description),
       ...report.structuredData.checklistResponses.map((entry) => entry.question),
       ...report.structuredData.tasks.map((task) => task.description)

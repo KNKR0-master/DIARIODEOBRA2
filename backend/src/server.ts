@@ -7,13 +7,28 @@ import { fileURLToPath } from "node:url";
 import Fastify from "fastify";
 import { registerRoutes } from "./modules/routes.js";
 
+const defaultAllowedOrigins = ["http://127.0.0.1:5188", "http://localhost:5188", "http://127.0.0.1:4173", "http://localhost:4173"];
+
+function getAllowedOrigins() {
+  const configuredOrigins = process.env.CORS_ORIGIN?.split(",").map((origin) => origin.trim()).filter(Boolean);
+  return configuredOrigins?.length ? configuredOrigins : defaultAllowedOrigins;
+}
+
 export async function buildServer() {
   const app = Fastify({
     logger: true
   });
 
+  const allowedOrigins = getAllowedOrigins();
   await app.register(cors, {
-    origin: true,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(null, false);
+    },
     credentials: true,
     methods: ["GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"]
   });

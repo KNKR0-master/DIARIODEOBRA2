@@ -71,6 +71,19 @@ Responsibilities:
 - Require human review for low-confidence records.
 - Suggest corrections without overwriting the original message.
 
+### Weather Data Skill
+
+Suggests weather data for RDO climate fields from project coordinates.
+
+Responsibilities:
+
+- Use the project's latitude and longitude as the weather lookup base.
+- Query Open-Meteo or another approved weather provider through the backend.
+- Map provider data into the RDO fields Tempo, Condições de Trabalho, and Índice Pluviométrico.
+- Show weather data as a suggestion, never as unquestioned truth.
+- Warn users to validate jobsite reality before saving the report.
+- Fail safely when coordinates are missing, invalid, or the provider is unavailable.
+
 ### Dashboard Insight Skill
 
 Turns stored reports into useful management insights.

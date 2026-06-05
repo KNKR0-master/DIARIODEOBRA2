@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { FastifyInstance } from "fastify";
 import { database } from "../data/database.js";
 import { authenticateRequest, clearFailedLogins, clearSessionCookie, createCsrfToken, createSessionForUser, getAuthActor, getFailedLoginState, hashPassword, hashSessionToken, recordFailedLogin, requireProfiles, requireWriteAccess, setCsrfCookie, setSessionCookie, validatePasswordPolicy, verifyCsrfToken, verifyPassword } from "./auth.js";
-import type { AuditLog, CatalogItem, ChecklistTemplate, ContractType, PdfVersion, Project, ProjectStatus, Report, ReportAttachment, ReportChecklistResponse, ReportEquipmentEntry, ReportLaborEntry, ReportOccurrenceEntry, ReportSections, ReportStructuredData, ReportTask, ReportTemplate, User } from "../types.js";
+import type { AuditLog, CatalogItem, ChecklistTemplate, ContractType, PdfVersion, Project, ProjectStatus, Report, ReportActivityEntry, ReportAttachment, ReportChecklistResponse, ReportEquipmentEntry, ReportLaborEntry, ReportOccurrenceEntry, ReportSections, ReportStructuredData, ReportTask, ReportTemplate, User } from "../types.js";
 
 type StructuredDataInput = {
   laborEntries?: Array<Omit<ReportLaborEntry, "id" | "reportId"> & { id?: string }>;
@@ -11,6 +11,7 @@ type StructuredDataInput = {
   occurrenceEntries?: Array<Omit<ReportOccurrenceEntry, "id" | "reportId"> & { id?: string }>;
   checklistResponses?: Array<Omit<ReportChecklistResponse, "id" | "reportId"> & { id?: string }>;
   tasks?: Array<Omit<ReportTask, "id" | "reportId"> & { id?: string }>;
+  activityEntries?: Array<Omit<ReportActivityEntry, "id" | "reportId"> & { id?: string }>;
 };
 
 const createProjectSchema = z.object({
@@ -22,6 +23,8 @@ const createProjectSchema = z.object({
   contractor: z.string().optional().default(""),
   contract: z.string().optional().default(""),
   address: z.string().optional().default(""),
+  latitude: z.string().optional().default(""),
+  longitude: z.string().optional().default(""),
   startDate: z.string().optional().default(""),
   expectedEndDate: z.string().optional().default(""),
   taskListEnabled: z.boolean().optional().default(false),
@@ -29,6 +32,10 @@ const createProjectSchema = z.object({
 });
 
 const updateProjectSchema = createProjectSchema;
+
+const projectWeatherQuerySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
+});
 
 const userSchema = z.object({
   name: z.string().min(1),
@@ -86,6 +93,8 @@ const reportSectionsSchema = z.object({
   checklistNotes: z.string().default("")
 });
 
+const maxAttachmentDataUrlLength = 12 * 1024 * 1024;
+
 const createReportSchema = z.object({
   projectId: z.string().min(1),
   templateId: z.string().min(1).optional().default("template-rdo"),
@@ -104,6 +113,8 @@ const updateReportSchema = z.object({
           description: z.string().min(1),
           quantity: z.number().nonnegative(),
           unit: z.string().min(1).default("profissionais"),
+          sourceType: z.enum(["own", "outsourced"]).optional().default("own"),
+          serviceProvider: z.string().optional().default(""),
           notes: z.string().optional().default("")
         })
       ),
@@ -114,6 +125,15 @@ const updateReportSchema = z.object({
           description: z.string().min(1),
           quantity: z.number().nonnegative(),
           hours: z.number().nonnegative().default(0),
+          originType: z.enum(["own", "rented", "other"]).optional().default("own"),
+          originDetail: z.string().optional().default(""),
+          rentalDate: z.string().optional().default(""),
+          returnDeadline: z.string().optional().default(""),
+          rentalCompany: z.string().optional().default(""),
+          returnAlertEnabled: z.boolean().optional().default(false),
+          returnAlertDaysBefore: z.number().nonnegative().optional().default(3),
+          photoDataUrl: z.string().max(maxAttachmentDataUrlLength).optional().default(""),
+          photoFileName: z.string().optional().default(""),
           notes: z.string().optional().default("")
         })
       ),
@@ -149,6 +169,20 @@ const updateReportSchema = z.object({
           dueDate: z.string().optional().default(""),
           percentComplete: z.number().min(0).max(100).optional().default(0)
         })
+      ),
+      activityEntries: z.array(
+        z.object({
+          id: z.string().optional(),
+          description: z.string().min(1),
+          quantity: z.number().nonnegative().optional().default(0),
+          unit: z.string().optional().default(""),
+          percentComplete: z.number().min(0).max(100).optional().default(0),
+          status: z.enum(["started", "in_progress", "completed", "not_started", "paused", "not_executed"]).default("in_progress"),
+          startTime: z.string().optional().default(""),
+          endTime: z.string().optional().default(""),
+          laborEntryIds: z.array(z.string()).optional().default([]),
+          equipmentEntryIds: z.array(z.string()).optional().default([])
+        })
       )
     })
     .optional()
@@ -160,7 +194,7 @@ const attachmentSchema = z.object({
   attachmentType: z.enum(["photo", "video", "document"]).default("photo"),
   source: z.enum(["local_upload", "whatsapp"]).default("local_upload"),
   taskId: z.string().optional(),
-  dataUrl: z.string().min(1),
+  dataUrl: z.string().min(1).max(maxAttachmentDataUrlLength),
   caption: z.string().optional().default("")
 });
 
@@ -190,7 +224,8 @@ const emptyStructuredData = (): ReportStructuredData => ({
   equipmentEntries: [],
   occurrenceEntries: [],
   checklistResponses: [],
-  tasks: []
+  tasks: [],
+  activityEntries: []
 });
 
 const catalogKinds = {
@@ -224,6 +259,100 @@ const buildReportHash = (report: Report) =>
     )
     .digest("hex");
 
+type WeatherPeriod = "Manhã" | "Tarde" | "Noite";
+type WeatherOption = "Claro" | "Nublado" | "Chuvoso";
+type WorkConditionOption = "Praticável" | "Parcialmente Praticável" | "Impraticável";
+
+type WeatherSuggestion = {
+  tempo: Record<WeatherPeriod, WeatherOption | "">;
+  condicoes: Record<WeatherPeriod, WorkConditionOption | "">;
+  indicePluviometrico: string;
+};
+
+type OpenMeteoResponse = {
+  hourly?: {
+    time?: string[];
+    weather_code?: number[];
+    cloud_cover?: number[];
+    precipitation?: number[];
+  };
+  daily?: {
+    precipitation_sum?: number[];
+  };
+  reason?: string;
+  error?: boolean;
+};
+
+const weatherPeriods: Array<{ key: WeatherPeriod; hours: number[] }> = [
+  { key: "Manhã", hours: [6, 7, 8, 9, 10, 11] },
+  { key: "Tarde", hours: [12, 13, 14, 15, 16, 17] },
+  { key: "Noite", hours: [18, 19, 20, 21, 22, 23] }
+];
+
+const emptyWeatherSuggestion = (): WeatherSuggestion => ({
+  tempo: { Manhã: "", Tarde: "", Noite: "" },
+  condicoes: { Manhã: "", Tarde: "", Noite: "" },
+  indicePluviometrico: ""
+});
+
+const rainyWeatherCodes = new Set([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 71, 73, 75, 77, 80, 81, 82, 85, 86, 95, 96, 99]);
+const cloudyWeatherCodes = new Set([2, 3, 45, 48]);
+const severeWeatherCodes = new Set([65, 67, 75, 82, 86, 95, 96, 99]);
+
+const asFiniteNumber = (value: unknown) => {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : undefined;
+};
+
+const asCoordinateNumber = (value: unknown) => {
+  if (typeof value === "string" && !value.trim()) return undefined;
+  return asFiniteNumber(value);
+};
+
+const isValidLatitude = (value: number) => value >= -90 && value <= 90;
+const isValidLongitude = (value: number) => value >= -180 && value <= 180;
+
+const hourFromOpenMeteoTime = (value: string) => {
+  const hourText = value.split("T")[1]?.slice(0, 2) ?? "";
+  const hour = Number(hourText);
+  return Number.isFinite(hour) ? hour : undefined;
+};
+
+function buildWeatherSuggestion(data: OpenMeteoResponse): WeatherSuggestion {
+  const suggestion = emptyWeatherSuggestion();
+  const hourly = data.hourly;
+  const times = hourly?.time ?? [];
+  const codes = hourly?.weather_code ?? [];
+  const clouds = hourly?.cloud_cover ?? [];
+  const precipitation = hourly?.precipitation ?? [];
+
+  const dailyPrecipitation = asFiniteNumber(data.daily?.precipitation_sum?.[0]);
+  const hourlyPrecipitationTotal = precipitation.reduce((total, value) => total + (asFiniteNumber(value) ?? 0), 0);
+  const precipitationTotal = dailyPrecipitation ?? hourlyPrecipitationTotal;
+  suggestion.indicePluviometrico = Number.isFinite(precipitationTotal) ? `${Number(precipitationTotal.toFixed(1))}` : "";
+
+  for (const period of weatherPeriods) {
+    const indexes = times
+      .map((time, index) => ({ hour: hourFromOpenMeteoTime(time), index }))
+      .filter(({ hour }) => hour !== undefined && period.hours.includes(hour));
+
+    if (!indexes.length) continue;
+
+    const periodCodes = indexes.map(({ index }) => asFiniteNumber(codes[index]) ?? 0);
+    const periodClouds = indexes.map(({ index }) => asFiniteNumber(clouds[index])).filter((value): value is number => value !== undefined);
+    const periodRain = indexes.reduce((total, { index }) => total + (asFiniteNumber(precipitation[index]) ?? 0), 0);
+    const averageCloudCover = periodClouds.length ? periodClouds.reduce((total, value) => total + value, 0) / periodClouds.length : 0;
+    const hasRain = periodRain >= 0.2 || periodCodes.some((code) => rainyWeatherCodes.has(code));
+    const hasClouds = averageCloudCover >= 55 || periodCodes.some((code) => cloudyWeatherCodes.has(code));
+    const hasSevereWeather = periodRain >= 15 || periodCodes.some((code) => severeWeatherCodes.has(code));
+
+    suggestion.tempo[period.key] = hasRain ? "Chuvoso" : hasClouds ? "Nublado" : "Claro";
+    suggestion.condicoes[period.key] = hasSevereWeather ? "Impraticável" : hasRain || periodRain >= 2 ? "Parcialmente Praticável" : "Praticável";
+  }
+
+  return suggestion;
+}
+
 const normalizeStructuredData = (reportId: string, structuredData?: StructuredDataInput): ReportStructuredData => ({
   laborEntries: (structuredData?.laborEntries ?? []).map((entry): ReportLaborEntry => ({
     id: entry.id || `report-labor-${randomUUID()}`,
@@ -232,6 +361,8 @@ const normalizeStructuredData = (reportId: string, structuredData?: StructuredDa
     description: entry.description,
     quantity: Number(entry.quantity) || 0,
     unit: entry.unit || "profissionais",
+    sourceType: entry.sourceType ?? "own",
+    serviceProvider: entry.sourceType === "outsourced" ? entry.serviceProvider ?? "" : "",
     notes: entry.notes ?? ""
   })),
   equipmentEntries: (structuredData?.equipmentEntries ?? []).map((entry): ReportEquipmentEntry => ({
@@ -241,6 +372,15 @@ const normalizeStructuredData = (reportId: string, structuredData?: StructuredDa
     description: entry.description,
     quantity: Number(entry.quantity) || 0,
     hours: Number(entry.hours) || 0,
+    originType: entry.originType ?? "own",
+    originDetail: entry.originType === "other" ? entry.originDetail ?? "" : "",
+    rentalDate: entry.rentalDate ?? "",
+    returnDeadline: entry.returnDeadline ?? "",
+    rentalCompany: entry.rentalCompany ?? "",
+    returnAlertEnabled: Boolean(entry.returnAlertEnabled),
+    returnAlertDaysBefore: Number(entry.returnAlertDaysBefore) || 0,
+    photoDataUrl: entry.photoDataUrl ?? "",
+    photoFileName: entry.photoFileName ?? "",
     notes: entry.notes ?? ""
   })),
   occurrenceEntries: (structuredData?.occurrenceEntries ?? []).map((entry): ReportOccurrenceEntry => ({
@@ -272,8 +412,40 @@ const normalizeStructuredData = (reportId: string, structuredData?: StructuredDa
     startDate: task.startDate ?? "",
     dueDate: task.dueDate ?? "",
     percentComplete: task.percentComplete ?? (task.status === "completed" ? 100 : 0)
+  })),
+  activityEntries: (structuredData?.activityEntries ?? []).map((activity): ReportActivityEntry => ({
+    id: activity.id || `report-activity-${randomUUID()}`,
+    reportId,
+    description: activity.description,
+    quantity: Number(activity.quantity) || 0,
+    unit: activity.unit ?? "",
+    percentComplete: Math.max(0, Math.min(100, Number(activity.percentComplete) || 0)),
+    status: activity.status ?? "in_progress",
+    startTime: activity.startTime ?? "",
+    endTime: activity.endTime ?? "",
+    laborEntryIds: activity.laborEntryIds ?? [],
+    equipmentEntryIds: activity.equipmentEntryIds ?? []
   }))
 });
+
+const attachManualEquipmentToCatalog = (structuredData: ReportStructuredData, actor: ReturnType<typeof getAuthActor>) => {
+  return {
+    ...structuredData,
+    equipmentEntries: structuredData.equipmentEntries.map((entry) => {
+      if (entry.catalogItemId || !entry.description.trim()) return entry;
+      const existingItem = database.findCatalogItemByDescription("equipment", entry.description);
+      const catalogItem = existingItem
+        ? existingItem.status === "active" ? existingItem : database.updateCatalogItem("equipment", { ...existingItem, status: "active" }, actor) ?? existingItem
+        : database.createCatalogItem("equipment", {
+        id: `equipment-${randomUUID()}`,
+        description: entry.description.trim(),
+        status: "active",
+        sourceType: "customized"
+      }, actor);
+      return { ...entry, catalogItemId: catalogItem.id };
+    })
+  };
+};
 
 export async function registerRoutes(app: FastifyInstance) {
   app.addHook("preHandler", async (request, reply) => {
@@ -462,6 +634,8 @@ export async function registerRoutes(app: FastifyInstance) {
       contractor: payload.contractor,
       contract: payload.contract,
       address: payload.address,
+      latitude: payload.latitude,
+      longitude: payload.longitude,
       startDate: payload.startDate,
       expectedEndDate: payload.expectedEndDate,
       taskListEnabled: payload.taskListEnabled,
@@ -499,6 +673,8 @@ export async function registerRoutes(app: FastifyInstance) {
       contractor: payload.contractor,
       contract: payload.contract,
       address: payload.address,
+      latitude: payload.latitude,
+      longitude: payload.longitude,
       startDate: payload.startDate,
       expectedEndDate: payload.expectedEndDate,
       taskListEnabled: payload.taskListEnabled,
@@ -536,6 +712,67 @@ export async function registerRoutes(app: FastifyInstance) {
       },
       recentReports: projectReports,
       recentPhotos
+    };
+  });
+
+  app.get("/api/projects/:id/weather", async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const parsedQuery = projectWeatherQuerySchema.safeParse(request.query);
+
+    if (!parsedQuery.success) {
+      return reply.code(400).send({ error: "Invalid weather query", details: parsedQuery.error.flatten() });
+    }
+
+    const project = database.getProject(id);
+    if (!project) {
+      return reply.code(404).send({ error: "Project not found" });
+    }
+
+    const latitude = asCoordinateNumber(project.latitude);
+    const longitude = asCoordinateNumber(project.longitude);
+    if (latitude === undefined || longitude === undefined) {
+      return reply.code(400).send({ error: "Cadastre as coordenadas da obra antes de buscar dados climáticos." });
+    }
+
+    if (!isValidLatitude(latitude) || !isValidLongitude(longitude)) {
+      return reply.code(400).send({ error: "As coordenadas da obra estão fora da faixa válida." });
+    }
+
+    const date = parsedQuery.data.date ?? new Date().toISOString().slice(0, 10);
+    const params = new URLSearchParams({
+      latitude: String(latitude),
+      longitude: String(longitude),
+      hourly: "weather_code,cloud_cover,precipitation",
+      daily: "precipitation_sum",
+      timezone: "auto",
+      start_date: date,
+      end_date: date
+    });
+
+    let response: Response;
+    let body: OpenMeteoResponse;
+    try {
+      response = await fetch(`https://api.open-meteo.com/v1/forecast?${params.toString()}`, {
+        signal: AbortSignal.timeout(10000)
+      });
+      body = (await response.json()) as OpenMeteoResponse;
+    } catch {
+      return reply.code(502).send({ error: "Não foi possível consultar o Open-Meteo." });
+    }
+
+    if (!response.ok || body.error) {
+      return reply.code(502).send({ error: body.reason ?? "Não foi possível consultar o Open-Meteo." });
+    }
+
+    return {
+      weather: buildWeatherSuggestion(body),
+      source: {
+        provider: "Open-Meteo",
+        date,
+        latitude,
+        longitude
+      },
+      warning: "Confira as informações sugeridas. As condições reais na obra podem ser diferentes dos dados coletados pelas agências de meteorologia."
     };
   });
 
@@ -671,6 +908,7 @@ export async function registerRoutes(app: FastifyInstance) {
       ...Object.keys(parsedBody.data.sections),
       ...(parsedBody.data.structuredData ? ["structuredData"] : [])
     ];
+    const normalizedStructuredData = parsedBody.data.structuredData ? normalizeStructuredData(report.id, parsedBody.data.structuredData) : report.structuredData;
     const updatedReport: Report = {
       ...report,
       status: report.status === "pending_review" ? "revised" : report.status,
@@ -678,7 +916,7 @@ export async function registerRoutes(app: FastifyInstance) {
         ...report.sections,
         ...parsedBody.data.sections
       },
-      structuredData: parsedBody.data.structuredData ? normalizeStructuredData(report.id, parsedBody.data.structuredData) : report.structuredData
+      structuredData: parsedBody.data.structuredData ? attachManualEquipmentToCatalog(normalizedStructuredData, getAuthActor(request)) : normalizedStructuredData
     };
 
     return { report: database.updateReportSections(updatedReport, getAuthActor(request), changedFields) };

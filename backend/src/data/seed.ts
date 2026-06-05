@@ -47,6 +47,8 @@ export const projects: Project[] = [
     responsible: "ENGENHEIRO TESTE",
     contractor: "PREFEITURA TESTE",
     contract: "1234567890",
+    latitude: "",
+    longitude: "",
     address: "ENDEREÇO TESTE",
     startDate: "2026-05-12",
     expectedEndDate: "2026-11-11",
@@ -153,7 +155,7 @@ export const checklists: ChecklistTemplate[] = [
         id: "checklist-quality-1",
         order: 1,
         itemLabel: "1 Item",
-        question: "O servico executado esta conforme?",
+        question: "O serviço executado está conforme?",
         answerType: "checkbox",
         allowMultipleResponses: false,
         answers: ["Matches", "Does not match", "Not applicable"]
@@ -177,31 +179,32 @@ export const reports: Report[] = [
       weather: "Manha com tempo aberto e tarde nublada.",
       labor: "Engenheiro: 1\nMestre de obra: 1\nPedreiro: 2\nServente: 3",
       equipment: "Betoneira: 1\nPá carregadeira: 1",
-      activities: "Execucao de alvenaria no pavimento 2 e conferencia de prumo.",
-      occurrences: "Sem ocorrencias criticas registradas.",
-      comments: "Frente liberada para continuidade no proximo dia util.",
-      checklistNotes: "Conferencia visual realizada pelo responsavel da obra."
+      activities: "Execução de alvenaria no pavimento 2 e conferência de prumo.",
+      occurrences: "Sem ocorrências críticas registradas.",
+      comments: "Frente liberada para continuidade no próximo dia útil.",
+      checklistNotes: "Conferência visual realizada pelo responsável da obra."
     },
     structuredData: {
       laborEntries: [
-        { id: "report-draft-1-labor-1", reportId: "report-draft-1", catalogItemId: "labor-3", description: "Engenheiro", quantity: 1, unit: "profissional", notes: "" },
-        { id: "report-draft-1-labor-2", reportId: "report-draft-1", catalogItemId: "labor-6", description: "Mestre de Obra", quantity: 1, unit: "profissional", notes: "" },
-        { id: "report-draft-1-labor-3", reportId: "report-draft-1", catalogItemId: "labor-7", description: "Pedreiro", quantity: 2, unit: "profissionais", notes: "" },
-        { id: "report-draft-1-labor-4", reportId: "report-draft-1", catalogItemId: "labor-8", description: "Servente", quantity: 3, unit: "profissionais", notes: "" }
+        { id: "report-draft-1-labor-1", reportId: "report-draft-1", catalogItemId: "labor-3", description: "Engenheiro", quantity: 1, unit: "profissional", sourceType: "own", serviceProvider: "", notes: "" },
+        { id: "report-draft-1-labor-2", reportId: "report-draft-1", catalogItemId: "labor-6", description: "Mestre de Obra", quantity: 1, unit: "profissional", sourceType: "own", serviceProvider: "", notes: "" },
+        { id: "report-draft-1-labor-3", reportId: "report-draft-1", catalogItemId: "labor-7", description: "Pedreiro", quantity: 2, unit: "profissionais", sourceType: "own", serviceProvider: "", notes: "" },
+        { id: "report-draft-1-labor-4", reportId: "report-draft-1", catalogItemId: "labor-8", description: "Servente", quantity: 3, unit: "profissionais", sourceType: "own", serviceProvider: "", notes: "" }
       ],
       equipmentEntries: [
-        { id: "report-draft-1-equipment-1", reportId: "report-draft-1", catalogItemId: "equipment-1", description: "Betoneira", quantity: 1, hours: 6, notes: "" },
-        { id: "report-draft-1-equipment-2", reportId: "report-draft-1", catalogItemId: "equipment-7", description: "Pá Carregadeira", quantity: 1, hours: 2, notes: "" }
+        { id: "report-draft-1-equipment-1", reportId: "report-draft-1", catalogItemId: "equipment-1", description: "Betoneira", quantity: 1, hours: 6, originType: "own", originDetail: "", rentalDate: "", returnDeadline: "", rentalCompany: "", returnAlertEnabled: false, returnAlertDaysBefore: 3, photoDataUrl: "", photoFileName: "", notes: "" },
+        { id: "report-draft-1-equipment-2", reportId: "report-draft-1", catalogItemId: "equipment-7", description: "Pá Carregadeira", quantity: 1, hours: 2, originType: "own", originDetail: "", rentalDate: "", returnDeadline: "", rentalCompany: "", returnAlertEnabled: false, returnAlertDaysBefore: 3, photoDataUrl: "", photoFileName: "", notes: "" }
       ],
       occurrenceEntries: [
         { id: "report-draft-1-occurrence-1", reportId: "report-draft-1", description: "Sem ocorrências críticas registradas", severity: "info", notes: "" }
       ],
       checklistResponses: [
-        { id: "report-draft-1-checklist-1", reportId: "report-draft-1", checklistId: "checklist-quality", checklistItemId: "checklist-quality-1", itemLabel: "1 Item", question: "O servico executado esta conforme?", answer: "Matches", compliant: true, notes: "Conferência visual realizada." }
+        { id: "report-draft-1-checklist-1", reportId: "report-draft-1", checklistId: "checklist-quality", checklistItemId: "checklist-quality-1", itemLabel: "1 Item", question: "O serviço executado está conforme?", answer: "Matches", compliant: true, notes: "Conferência visual realizada." }
       ],
       tasks: [
         { id: "report-draft-1-task-1", reportId: "report-draft-1", description: "Continuar alvenaria do pavimento 2", status: "pending", owner: "Mestre de Obra", scheduleItem: "Alvenaria pavimento 2", startDate: "2026-05-12", dueDate: "2026-05-13", percentComplete: 35 }
-      ]
+      ],
+      activityEntries: []
     }
   }
 ];

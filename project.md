@@ -295,6 +295,17 @@ Stage 6 starts hosted prototype deployment:
 - Custom certificates were requested for `relatoriodeobra.app.br` and `www.relatoriodeobra.app.br`.
 - DNS is still pending in Umbler: the domain must point to the Fly IPv4/IPv6 records before certificates verify.
 
+Stage 7 refines the RDO editor and security baseline:
+
+- The report editor now separates each major RDO area into its own visual block: Condições Climáticas, Mão de Obra, Equipamentos, Atividades, Ocorrências, Checklist, Comentários, Fotos, Vídeos, Anexos, and Assinatura Manual.
+- Condições Climáticas changed from a free-text field to structured tables for Tempo and Condições de Trabalho by Manhã, Tarde, and Noite, plus Índice Pluviométrico.
+- Projects now store latitude and longitude, with a browser/mobile geolocation helper in the project form.
+- The RDO can suggest weather data automatically from Open-Meteo using the project coordinates and report date. The UI always warns the user to validate the suggested weather against real jobsite conditions.
+- Mão de Obra entries are now editable item by item through an edit pencil. Entries stay read-only until the user clicks the pencil.
+- Labor function selection is dropdown-based. Existing catalog roles and custom roles already inserted in the report appear as options; the "Nova Função" input appears only when the user chooses "Outra".
+- Labor entries store whether the workforce is Própria or Terceirizada. Terceirizada entries can store the service provider company name.
+- API robustness improved: restricted CORS origins, safer API response parsing, Open-Meteo timeout, coordinate range validation, attachment payload size limit, and production requirement for `DEFAULT_ADMIN_PASSWORD`.
+
 ## Future Scope
 
 - Photo analysis.
@@ -317,4 +328,4 @@ Stage 6 starts hosted prototype deployment:
 - Signature and trust: resolved. Store virtual signature, user ID, user name, creation date/time, approval date/time, hash/checksum, and approved PDF version.
 - Photos: resolved for MVP. Photos are optional, with admin configuration to make them required by company, project, or template later.
 - PDF generation: resolved. Required after report approval in the MVP.
-- Login/logout: partially resolved. The app now has real login, HttpOnly session cookies, logout, password hashing, CSRF protection, and initial role-aware navigation. Password recovery, per-project permissions, persistent rate limiting, and deeper route-aware UI remain open.
+- Login/logout: partially resolved. The app now has real login, HttpOnly session cookies, logout, password hashing, CSRF protection, restricted CORS for known origins, and initial role-aware navigation. Password recovery, per-project permissions, persistent rate limiting, and deeper route-aware UI remain open.

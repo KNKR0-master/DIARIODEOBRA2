@@ -86,6 +86,9 @@ Add project modal:
 - Contract.
 - Status.
 - Address.
+- Latitude.
+- Longitude.
+- Use current location action using browser/mobile geolocation.
 - Task list setting.
 
 Contract types:
@@ -165,11 +168,23 @@ Report editor sections:
 - Attachment.
 - Signature.
 
+Current "Marco 1" visual organization:
+
+- Each major report area is rendered as its own white block with orange section styling.
+- The internal term "Marco 1" is only used for team communication and should not appear in the app UI.
+- Current areas: Condições Climáticas, Mão de Obra, Equipamentos, Atividades, Ocorrências, Checklist, Comentários, Fotos, Vídeos, Anexos, and Assinatura Manual.
+
 Structured RDO inputs:
 
 - Labor, equipment, occurrences, checklist answers, and task list should be entered as structured rows linked to report data.
-- Text areas remain for weather, activities, and commentary.
+- Text areas remain for activities and commentary.
+- Weather conditions use structured tables for Tempo and Condições de Trabalho across Manhã, Tarde, and Noite, plus Índice Pluviométrico.
+- Weather can be suggested automatically from Open-Meteo when the project has valid coordinates. The user must validate the suggested values against the real jobsite conditions.
 - Labor and equipment catalog checkboxes in Cadastros activate or deactivate suggestions; they are not the final report entries.
+- Labor entries are read-only after insertion until the user clicks the pencil icon on the item.
+- Labor function editing uses a dropdown, not free text. The dropdown includes active catalog roles and custom roles already inserted in the current report.
+- Selecting "Outra" shows the "Nova Função" input.
+- Labor entries can be marked as Própria or Terceirizada; Terceirizada entries show an Empresa prestadora field.
 
 ### Report Chat Hub
 
@@ -292,3 +307,10 @@ The first implemented frontend wireframe is now:
 8. Report audit panel showing persisted lifecycle events from the backend.
 
 This is the first functional product structure. It is intentionally not the final UI.
+
+## Current Validation Notes
+
+- `npm run typecheck` passes for backend and web.
+- `npm run build` passes for backend and web.
+- `npm audit` currently reports zero vulnerabilities.
+- Browser validation confirmed the current local app shell, RDO editor rendering, and absence of fresh runtime console errors after reload.

@@ -59,7 +59,14 @@ Current persisted tables:
 - `checklist_items`.
 - `reports`.
 - `report_sections`.
+- `report_labor_entries`.
+- `report_equipment_entries`.
+- `report_occurrence_entries`.
+- `report_checklist_responses`.
+- `report_tasks`.
+- `report_attachments`.
 - `pdf_versions`.
+- `auth_sessions`.
 - `audit_logs`.
 
 The seed layer is idempotent: it inserts the default company, user, signature, project, RDO template, catalogs, checklist, and initial report only when they are missing.
@@ -133,6 +140,7 @@ This layer is not production runtime. It is a product discovery and validation w
 
 - Project.
 - Project group.
+- Coordinates: latitude and longitude for weather automation and future location-based workflows.
 - Project settings.
 - Project predefined labor.
 - Project predefined equipment.
@@ -142,6 +150,9 @@ This layer is not production runtime. It is a product discovery and validation w
 - Report.
 - Report template.
 - Report section.
+- Structured climate value stored in the weather section JSON.
+- Structured labor entries with own/outsourced source and optional service provider.
+- Structured equipment, occurrence, checklist, task, photo, video, and attachment records.
 - Report approval.
 - Report PDF.
 - Report amendment.
@@ -200,6 +211,11 @@ Rules:
 - Never overwrite approved reports.
 - Keep provider credentials outside source code.
 - Use role and permission placeholders from the beginning.
+- Use HttpOnly session cookies with hashed session tokens in the database.
+- Use same-site CSRF tokens for state-changing API calls.
+- Restrict CORS to known local or configured origins.
+- Require `DEFAULT_ADMIN_PASSWORD` in production instead of using the development fallback password.
+- Limit large attachment payloads and fail external provider requests with a timeout.
 
 ## Development Environments
 
@@ -213,6 +229,8 @@ Rules:
 - `PORT`.
 - `HOST`.
 - `DATABASE_PATH`.
+- `DEFAULT_ADMIN_PASSWORD`.
+- `CORS_ORIGIN`.
 - `WHATSAPP_PROVIDER`.
 - `WHATSAPP_WEBHOOK_SECRET`.
 - `WHATSAPP_PHONE_NUMBER_ID`.
@@ -241,7 +259,9 @@ Current persisted API routes:
 - `GET /api/users`.
 - `GET /api/projects`.
 - `POST /api/projects`.
+- `PATCH /api/projects/:id`.
 - `GET /api/projects/:id/overview`.
+- `GET /api/projects/:id/weather`.
 - `GET /api/reports`.
 - `POST /api/reports`.
 - `GET /api/reports/:id`.
@@ -253,8 +273,15 @@ Current persisted API routes:
 - `GET /api/reports/:id/pdf-versions`.
 - `GET /api/audit/:entityType/:entityId`.
 - `GET /api/report-templates`.
+- `POST /api/report-templates`.
+- `PATCH /api/report-templates/:id`.
 - `GET /api/catalogs/labor`.
 - `GET /api/catalogs/equipment`.
 - `GET /api/catalogs/occurrence-types`.
+- `GET /api/catalogs/project-groups`.
 - `GET /api/catalogs/checklists`.
+- `POST /api/catalogs/items/:kind`.
+- `PATCH /api/catalogs/items/:kind/:id`.
+- `POST /api/catalogs/checklists`.
+- `PATCH /api/catalogs/checklists/:id`.
 - `POST /api/whatsapp/webhook`.
