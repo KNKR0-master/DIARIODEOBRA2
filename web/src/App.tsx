@@ -68,6 +68,7 @@ type Page =
   | "projects"
   | "overview"
   | "project-search"
+  | "project-checklists"
   | "reports"
   | "report-detail"
   | "analysis"
@@ -226,7 +227,7 @@ function App() {
         return;
       }
 
-      setError(loadError instanceof Error ? loadError.message : "NÃ£o foi possÃ­vel carregar a API.");
+      setError(loadError instanceof Error ? loadError.message : "Não foi possível carregar a API.");
     } finally {
       setLoading(false);
     }
@@ -454,6 +455,7 @@ function App() {
             onBack={() => setPage("projects")}
             onReports={() => setPage("reports")}
             onSearch={() => setPage("project-search")}
+            onChecklists={() => setPage("project-checklists")}
             onEdit={() => setModal({ type: "project-edit", project: selectedProject })}
             onOpenReport={openReport}
           />
@@ -464,6 +466,19 @@ function App() {
             onBack={() => setPage("overview")}
             onOverview={() => setPage("overview")}
             onReports={() => setPage("reports")}
+            onChecklists={() => setPage("project-checklists")}
+            onEdit={() => setModal({ type: "project-edit", project: selectedProject })}
+            onOpenReport={openReport}
+          />
+        ) : page === "project-checklists" && selectedProject ? (
+          <ProjectChecklistsPage
+            project={selectedProject}
+            reports={projectReports}
+            checklists={checklists}
+            onBack={() => setPage("overview")}
+            onOverview={() => setPage("overview")}
+            onReports={() => setPage("reports")}
+            onSearch={() => setPage("project-search")}
             onEdit={() => setModal({ type: "project-edit", project: selectedProject })}
             onOpenReport={openReport}
           />
@@ -671,7 +686,7 @@ function ProjectsPage({ projects, reports, onOpenProject, onAddProject }: { proj
   );
 }
 
-function ProjectOverview({ project, reports, onBack, onReports, onSearch, onEdit, onOpenReport }: { project: Project; reports: Report[]; onBack: () => void; onReports: () => void; onSearch: () => void; onEdit: () => void; onOpenReport: (reportId: string) => void }) {
+function ProjectOverview({ project, reports, onBack, onReports, onSearch, onChecklists, onEdit, onOpenReport }: { project: Project; reports: Report[]; onBack: () => void; onReports: () => void; onSearch: () => void; onChecklists: () => void; onEdit: () => void; onOpenReport: (reportId: string) => void }) {
   const [recentPhotos, setRecentPhotos] = useState<ReportAttachment[]>([]);
   const [photoCount, setPhotoCount] = useState(0);
   const approved = reports.filter((report) => report.status === "approved").length;
@@ -709,7 +724,7 @@ function ProjectOverview({ project, reports, onBack, onReports, onSearch, onEdit
 
   return (
     <div className="project-layout">
-      <ProjectSidebar project={project} reportsCount={reports.length} active="overview" onBack={onBack} onOverview={() => undefined} onReports={onReports} onSearch={onSearch} onEdit={onEdit} />
+      <ProjectSidebar project={project} reportsCount={reports.length} checklistsCount={countAnsweredChecklistGroups(reports)} active="overview" onBack={onBack} onOverview={() => undefined} onReports={onReports} onSearch={onSearch} onChecklists={onChecklists} onEdit={onEdit} />
       <section className="project-content">
         <div className="kpi-row">
           {cards.map((card) => (
@@ -761,6 +776,7 @@ function ProjectSearchPage({
   onBack,
   onOverview,
   onReports,
+  onChecklists,
   onEdit,
   onOpenReport
 }: {
@@ -769,6 +785,7 @@ function ProjectSearchPage({
   onBack: () => void;
   onOverview: () => void;
   onReports: () => void;
+  onChecklists: () => void;
   onEdit: () => void;
   onOpenReport: (reportId: string) => void;
 }) {
@@ -784,7 +801,7 @@ function ProjectSearchPage({
 
   return (
     <div className="project-layout">
-      <ProjectSidebar project={project} reportsCount={reports.length} active="search" onBack={onBack} onOverview={onOverview} onReports={onReports} onSearch={() => undefined} onEdit={onEdit} />
+      <ProjectSidebar project={project} reportsCount={reports.length} checklistsCount={countAnsweredChecklistGroups(reports)} active="search" onBack={onBack} onOverview={onOverview} onReports={onReports} onSearch={() => undefined} onChecklists={onChecklists} onEdit={onEdit} />
       <section className="project-content">
         <div className="page-toolbar">
           <h1>Filtro de busca</h1>
@@ -805,6 +822,69 @@ function ProjectSearchPage({
             <h2>Resultados ({filteredReports.length})</h2>
           </div>
           {filteredReports.length > 0 ? <ReportCompactList reports={filteredReports} onOpenReport={onOpenReport} /> : <EmptyState icon={Search} title="Nenhum relatório encontrado" text="Altere a busca, status ou data para localizar outro RDO." />}
+        </section>
+      </section>
+    </div>
+  );
+}
+
+function ProjectChecklistsPage({
+  project,
+  reports,
+  checklists,
+  onBack,
+  onOverview,
+  onReports,
+  onSearch,
+  onEdit,
+  onOpenReport
+}: {
+  project: Project;
+  reports: Report[];
+  checklists: ChecklistTemplate[];
+  onBack: () => void;
+  onOverview: () => void;
+  onReports: () => void;
+  onSearch: () => void;
+  onEdit: () => void;
+  onOpenReport: (reportId: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const checklistGroups = buildProjectChecklistGroups(reports, checklists);
+  const visibleGroups = checklistGroups.filter((group) => matchesQuery([group.checklistName, `RDO ${group.report.number}`, group.report.reportDate], query));
+
+  return (
+    <div className="project-layout">
+      <ProjectSidebar project={project} reportsCount={reports.length} checklistsCount={checklistGroups.length} active="checklists" onBack={onBack} onOverview={onOverview} onReports={onReports} onSearch={onSearch} onChecklists={() => undefined} onEdit={onEdit} />
+      <section className="project-content">
+        <div className="page-toolbar">
+          <h1>Checklists</h1>
+          <div className="filters">
+            <IconInput icon={Search} placeholder="Buscar checklist respondido" value={query} onChange={setQuery} />
+          </div>
+        </div>
+        <section className="panel">
+          <div className="panel-header">
+            <h2>Checklists respondidos ({visibleGroups.length})</h2>
+            <span className="badge gray">{checklistGroups.length} registro(s)</span>
+          </div>
+          {visibleGroups.length > 0 ? (
+            <div className="project-checklist-list">
+              {visibleGroups.map((group) => (
+                <article className="project-checklist-card" key={group.id}>
+                  <div className="project-checklist-card-header">
+                    <div>
+                      <strong>{group.checklistName}</strong>
+                      <span>Respondido em {formatDate(group.report.reportDate)} / RDO #{group.report.number}</span>
+                    </div>
+                    <button className="secondary-action" type="button" onClick={() => onOpenReport(group.report.id)}><FileText size={16} />Abrir RDO</button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <EmptyState icon={ListChecks} title="Nenhum checklist respondido" text="Os checklists salvos nos RDOs desta obra aparecerão aqui." />
+          )}
         </section>
       </section>
     </div>
@@ -1083,7 +1163,7 @@ function ReportReadOnlyView({ report, project, sections, structuredData, attachm
     ...structuredData.laborEntries.map((entry) => ({ title: entry.description, value: laborEntrySummary(entry), meta: "Mão de obra" })),
     ...structuredData.equipmentEntries.map((entry) => ({ title: entry.description, value: equipmentEntrySummary(entry), meta: "Equipamento" })),
     ...structuredData.activityEntries.map((entry) => ({ title: entry.description, value: activitySummary(entry), meta: "Atividade" })),
-    ...structuredData.occurrenceEntries.map((entry) => ({ title: entry.description, value: occurrenceSeverityLabel(entry.severity), meta: "Ocorrência" })),
+    ...structuredData.occurrenceEntries.map((entry) => ({ title: entry.description, value: occurrenceEntrySummary(entry), meta: "Ocorrência" })),
     ...structuredData.checklistResponses.map((entry) => ({ title: entry.question, value: entry.answer || "Sem resposta", meta: "Checklist" })),
     ...structuredData.tasks.map((task) => ({ title: task.scheduleItem ? `${task.scheduleItem} - ${task.description}` : task.description, value: `${taskStatusLabel(task.status)} / ${task.percentComplete ?? 0}%${task.owner ? ` / ${task.owner}` : ""}${task.startDate ? ` / Início ${formatDate(task.startDate)}` : ""}${task.dueDate ? ` / Prazo ${formatDate(task.dueDate)}` : ""}`, meta: "Tarefa" }))
   ];
@@ -1249,26 +1329,14 @@ function parseWeatherValue(value: string): WeatherFormValue {
 
 function emptyWeatherFormValue(): WeatherFormValue {
   return {
-    tempo: {
-      Manhã: "",
-      Tarde: "",
-      Noite: ""
-    },
-    condicoes: {
-      Manhã: "",
-      Tarde: "",
-      Noite: ""
-    },
+    tempo: emptyWeatherPeriodRecord(),
+    condicoes: emptyWeatherPeriodRecord(),
     indicePluviometrico: ""
   };
 }
 
 function normalizeWeatherRecord<TOption extends string>(record: unknown, options: readonly TOption[]) {
-  const result = {
-    Manhã: "",
-    Tarde: "",
-    Noite: ""
-  } as Record<WeatherPeriod, TOption | "">;
+  const result = emptyWeatherPeriodRecord<TOption>();
 
   if (!record || typeof record !== "object") return result;
 
@@ -1278,6 +1346,10 @@ function normalizeWeatherRecord<TOption extends string>(record: unknown, options
   }
 
   return result;
+}
+
+function emptyWeatherPeriodRecord<TOption extends string = never>() {
+  return Object.fromEntries(weatherPeriods.map((period) => [period, ""])) as Record<WeatherPeriod, TOption | "">;
 }
 
 function serializeWeatherValue(value: WeatherFormValue) {
@@ -1446,6 +1518,224 @@ function activityLinkSummary(activity: ReportActivityEntry, laborEntries: Report
   return [`Mão de obra: ${labor.length ? labor.join(", ") : "sem vínculo"}`, `Equipamentos: ${equipment.length ? equipment.join(", ") : "sem vínculo"}`].join(" / ");
 }
 
+function OccurrencesMarco({ locked, reportId, occurrenceTypes, entries, onChange }: { locked: boolean; reportId: string; occurrenceTypes: CatalogItem[]; entries: ReportOccurrenceEntry[]; onChange: (entries: ReportOccurrenceEntry[]) => void }) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [photoError, setPhotoError] = useState("");
+  const [draft, setDraft] = useState({
+    catalogItemId: "",
+    notes: "",
+    startTime: "",
+    endTime: "",
+    photoDataUrl: "",
+    photoFileName: ""
+  });
+
+  const resetDraft = () => {
+    setDraft({ catalogItemId: "", notes: "", startTime: "", endTime: "", photoDataUrl: "", photoFileName: "" });
+    setModalOpen(false);
+  };
+
+  const handlePhotoChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    try {
+      setPhotoError("");
+      const dataUrl = await fileToDataUrl(file);
+      setDraft((current) => ({ ...current, photoDataUrl: dataUrl, photoFileName: file.name }));
+    } catch (uploadError) {
+      setPhotoError(uploadError instanceof Error ? uploadError.message : "Não foi possível carregar a foto.");
+    }
+  };
+
+  const addOccurrence = () => {
+    const selectedType = occurrenceTypes.find((item) => item.id === draft.catalogItemId);
+    const description = selectedType?.description ?? "Sem sugestão";
+    const notes = draft.notes.trim();
+    if (!selectedType && !notes) return;
+    const occurrence: ReportOccurrenceEntry = {
+      id: makeLocalId("occurrence"),
+      reportId,
+      catalogItemId: selectedType?.id,
+      description: selectedType?.description ?? notes,
+      severity: "info",
+      startTime: draft.startTime,
+      endTime: draft.endTime,
+      photoDataUrl: draft.photoDataUrl,
+      photoFileName: draft.photoFileName,
+      notes
+    };
+    onChange([...entries, occurrence]);
+    resetDraft();
+  };
+
+  return (
+    <ReportMarcoOne title={marcoOneTitles.occurrences} hint="Registre ocorrências com tipo, descrição, horário e evidência fotográfica.">
+      <div className="occurrence-marco-header">
+        {!locked && <button className="small-primary" type="button" onClick={() => setModalOpen(true)}><Plus size={15} />Adicionar Ocorrência</button>}
+      </div>
+      {entries.length === 0 ? <span className="muted-text">Nenhuma ocorrência adicionada.</span> : (
+        <div className="occurrence-entry-list">
+          {entries.map((entry) => (
+            <div className="occurrence-entry-card" key={entry.id}>
+              {entry.photoDataUrl ? <img className="occurrence-entry-photo" src={entry.photoDataUrl} alt={entry.photoFileName || entry.description} /> : <div className="occurrence-entry-photo placeholder"><ShieldCheck size={24} /></div>}
+              <div>
+                <strong>{entry.description}</strong>
+                <span>{occurrenceEntrySummary(entry)}</span>
+                {entry.photoFileName && <small>Foto: {entry.photoFileName}</small>}
+              </div>
+              {!locked && <button type="button" aria-label={`Remover ${entry.description}`} onClick={() => onChange(entries.filter((item) => item.id !== entry.id))}><X size={15} /></button>}
+            </div>
+          ))}
+        </div>
+      )}
+      {modalOpen && (
+        <div className="occurrence-modal-backdrop">
+          <div className="occurrence-modal" role="dialog" aria-modal="true" aria-label="Adicionar Ocorrência">
+            <div className="occurrence-modal-header">
+              <h3>Adicionar Ocorrência</h3>
+              <button type="button" onClick={resetDraft} aria-label="Fechar"><X size={17} /></button>
+            </div>
+            <label>Tipo de ocorrência<select value={draft.catalogItemId} onChange={(event) => setDraft((current) => ({ ...current, catalogItemId: event.target.value }))}><option value="">Sem sugestão</option>{occurrenceTypes.map((item) => <option value={item.id} key={item.id}>{item.description}</option>)}</select></label>
+            <label>Descrição da ocorrência<textarea rows={4} value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Descreva com suas palavras o que aconteceu" /></label>
+            <div className="occurrence-modal-grid">
+              <label>Hora de Início<input type="time" value={draft.startTime} onChange={(event) => setDraft((current) => ({ ...current, startTime: event.target.value }))} /></label>
+              <label>Hora de Fim<input type="time" value={draft.endTime} onChange={(event) => setDraft((current) => ({ ...current, endTime: event.target.value }))} /></label>
+            </div>
+            <div className="occurrence-photo-row">
+              <label className="upload-button"><Camera size={16} />{draft.photoFileName || "Foto da ocorrência"}<input type="file" accept="image/*" onChange={(event) => void handlePhotoChange(event)} /></label>
+              {draft.photoDataUrl && <figure className="occurrence-photo-preview"><img src={draft.photoDataUrl} alt={draft.photoFileName || "Foto da ocorrência"} /><button type="button" onClick={() => setDraft((current) => ({ ...current, photoDataUrl: "", photoFileName: "" }))}><X size={14} /></button></figure>}
+            </div>
+            {photoError && <div className="error-banner compact">{photoError}</div>}
+            <div className="button-row">
+              <button className="secondary-action" type="button" onClick={resetDraft}>Cancelar</button>
+              <button className="primary-action" type="button" onClick={addOccurrence}>Adicionar Ocorrência</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </ReportMarcoOne>
+  );
+}
+
+function occurrenceEntrySummary(entry: ReportOccurrenceEntry) {
+  const time = [entry.startTime && `Início ${entry.startTime}`, entry.endTime && `Fim ${entry.endTime}`].filter(Boolean).join(" / ");
+  return [entry.notes, time].filter(Boolean).join(" / ") || "Sem descrição complementar";
+}
+
+function ChecklistMarco({ locked, reportId, checklists, responses, onChange }: { locked: boolean; reportId: string; checklists: ChecklistTemplate[]; responses: ReportChecklistResponse[]; onChange: (responses: ReportChecklistResponse[]) => void }) {
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedChecklistId, setSelectedChecklistId] = useState(checklists[0]?.id ?? "");
+  const selectedChecklist = checklists.find((checklist) => checklist.id === selectedChecklistId) ?? checklists[0];
+
+  useEffect(() => {
+    setSelectedChecklistId((current) => checklists.some((checklist) => checklist.id === current) ? current : checklists[0]?.id ?? "");
+  }, [checklists]);
+
+  const updateResponse = (checklist: ChecklistTemplate, item: ChecklistTemplate["items"][number], answer: string) => {
+    const existing = responses.find((response) => response.checklistItemId === item.id);
+    const response: ReportChecklistResponse = {
+      id: existing?.id ?? makeLocalId("checklist-response"),
+      reportId,
+      checklistId: checklist.id,
+      checklistItemId: item.id,
+      itemLabel: item.itemLabel,
+      question: item.question,
+      answer,
+      compliant: checklistAnswerCompliant(answer),
+      notes: existing?.notes ?? ""
+    };
+    onChange([response, ...responses.filter((entry) => entry.checklistItemId !== item.id)]);
+  };
+
+  const checklistSummaries = checklists.map((checklist) => {
+    const answered = checklist.items.filter((item) => responses.some((response) => response.checklistItemId === item.id && response.answer)).length;
+    return { checklist, answered, total: checklist.items.length };
+  });
+
+  return (
+    <ReportMarcoOne title={marcoOneTitles.checklist} hint="Responda aos checklists cadastrados em Cadastros > Checklist.">
+      <div className="checklist-marco-header">
+        {!locked && <button className="small-primary" type="button" disabled={checklists.length === 0} onClick={() => setModalOpen(true)}><Plus size={15} />Responder Checklist</button>}
+      </div>
+      {checklists.length === 0 ? (
+        <span className="muted-text">Nenhum checklist ativo cadastrado. Cadastre em Cadastros &gt; Checklist.</span>
+      ) : (
+        <div className="checklist-summary-list">
+          {checklistSummaries.map(({ checklist, answered, total }) => (
+            <div className="checklist-summary-card" key={checklist.id}>
+              <strong>{checklist.name}</strong>
+              <span>{answered}/{total} resposta(s)</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {modalOpen && selectedChecklist && (
+        <div className="checklist-response-modal-backdrop">
+          <div className="checklist-response-modal" role="dialog" aria-modal="true" aria-label="Responder Checklist">
+            <div className="checklist-response-modal-header">
+              <h3>Responder Checklist</h3>
+              <button type="button" onClick={() => setModalOpen(false)} aria-label="Fechar"><X size={17} /></button>
+            </div>
+            <label>Checklist<select value={selectedChecklist.id} onChange={(event) => setSelectedChecklistId(event.target.value)}>{checklists.map((checklist) => <option value={checklist.id} key={checklist.id}>{checklist.name}</option>)}</select></label>
+            <div className="checklist-form-preview">
+              {selectedChecklist.items.map((item) => {
+                const existing = responses.find((response) => response.checklistItemId === item.id);
+                return (
+                  <ChecklistResponseField
+                    key={item.id}
+                    item={item}
+                    value={existing?.answer ?? ""}
+                    disabled={locked}
+                    onChange={(answer) => updateResponse(selectedChecklist, item, answer)}
+                  />
+                );
+              })}
+            </div>
+            <div className="button-row">
+              <button className="primary-action" type="button" onClick={() => setModalOpen(false)}>Concluir</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </ReportMarcoOne>
+  );
+}
+
+function ChecklistResponseField({ item, value, disabled, onChange }: { item: ChecklistTemplate["items"][number]; value: string; disabled: boolean; onChange: (value: string) => void }) {
+  const selectedValues = value ? value.split("; ").filter(Boolean) : [];
+  const toggleAnswer = (answer: string) => {
+    const next = selectedValues.includes(answer) ? selectedValues.filter((itemValue) => itemValue !== answer) : [...selectedValues, answer];
+    onChange(next.join("; "));
+  };
+
+  return (
+    <div className="checklist-form-question">
+      <span>{item.itemLabel}</span>
+      <strong>{item.question}</strong>
+      {item.answerType === "text" ? (
+        <textarea disabled={disabled} rows={3} value={value} onChange={(event) => onChange(event.target.value)} placeholder="Resposta" />
+      ) : item.answerType === "number" ? (
+        <input disabled={disabled} type="number" value={value} onChange={(event) => onChange(event.target.value)} />
+      ) : item.answerType === "date" ? (
+        <input disabled={disabled} type="date" value={value} onChange={(event) => onChange(event.target.value)} />
+      ) : item.answerType === "multiple_choice" || item.allowMultipleResponses ? (
+        <div className="checklist-choice-list">{item.answers.map((answer) => <label key={answer}><input disabled={disabled} type="checkbox" checked={selectedValues.includes(answer)} onChange={() => toggleAnswer(answer)} />{answer}</label>)}</div>
+      ) : (
+        <div className="checklist-choice-list">{item.answers.map((answer) => <label key={answer}><input disabled={disabled} type="radio" name={item.id} checked={value === answer} onChange={() => onChange(answer)} />{answer}</label>)}</div>
+      )}
+    </div>
+  );
+}
+
+function checklistAnswerCompliant(answer: string) {
+  if (!answer) return undefined;
+  const normalized = answer.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (normalized.includes("nao atende") || normalized.includes("nao conforme")) return false;
+  if (normalized.includes("nao aplicavel")) return undefined;
+  return normalized.includes("match") || normalized.includes("atende") || normalized.includes("sim") || normalized.includes("conforme");
+}
+
 function ReportAttachmentsPanel({ locked, enabledItems, tasks, attachments, onUpload }: { locked: boolean; enabledItems: readonly string[]; tasks: ReportTask[]; attachments: ReportAttachment[]; onUpload: (file: File, caption: string, taskId?: string) => Promise<void> }) {
   const [caption, setCaption] = useState("");
   const [taskId, setTaskId] = useState("");
@@ -1573,7 +1863,7 @@ function StructuredReportEditor({
     photoFileName: "",
     notes: ""
   });
-  const [occurrenceDraft, setOccurrenceDraft] = useState({ catalogItemId: activeOccurrences[0]?.id ?? "", description: "", severity: "info" as ReportOccurrenceEntry["severity"], notes: "" });
+  const [equipmentPhotoError, setEquipmentPhotoError] = useState("");
   const [taskDraft, setTaskDraft] = useState({ description: "", status: "pending" as ReportTask["status"], owner: "", scheduleItem: "", startDate: "", dueDate: "", percentComplete: 0 });
 
   useEffect(() => {
@@ -1583,10 +1873,6 @@ function StructuredReportEditor({
   useEffect(() => {
     setEquipmentDraft((current) => ({ ...current, catalogItemId: activeEquipment.some((item) => item.id === current.catalogItemId) ? current.catalogItemId : activeEquipment[0]?.id ?? "" }));
   }, [equipment]);
-
-  useEffect(() => {
-    setOccurrenceDraft((current) => ({ ...current, catalogItemId: activeOccurrences.some((item) => item.id === current.catalogItemId) ? current.catalogItemId : activeOccurrences[0]?.id ?? "" }));
-  }, [occurrences]);
 
   const addLabor = () => {
     const selectedFunction = laborFunctionOptions.find((item) => item.value === laborDraft.catalogItemId);
@@ -1651,17 +1937,13 @@ function StructuredReportEditor({
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    const dataUrl = await fileToDataUrl(file);
-    setEquipmentDraft((current) => ({ ...current, photoDataUrl: dataUrl, photoFileName: file.name }));
-  };
-
-  const addOccurrence = () => {
-    const catalog = activeOccurrences.find((item) => item.id === occurrenceDraft.catalogItemId);
-    const description = occurrenceDraft.description.trim() || catalog?.description || "";
-    if (!description) return;
-    const entry: ReportOccurrenceEntry = { id: makeLocalId("occurrence"), reportId, catalogItemId: catalog?.id, description, severity: occurrenceDraft.severity, notes: occurrenceDraft.notes };
-    onChange({ occurrenceEntries: [...structuredData.occurrenceEntries, entry] });
-    setOccurrenceDraft((current) => ({ ...current, description: "", severity: "info", notes: "" }));
+    try {
+      setEquipmentPhotoError("");
+      const dataUrl = await fileToDataUrl(file);
+      setEquipmentDraft((current) => ({ ...current, photoDataUrl: dataUrl, photoFileName: file.name }));
+    } catch (uploadError) {
+      setEquipmentPhotoError(uploadError instanceof Error ? uploadError.message : "Não foi possível carregar a foto.");
+    }
   };
 
   const addTask = () => {
@@ -1671,10 +1953,6 @@ function StructuredReportEditor({
     const task: ReportTask = { id: makeLocalId("task"), reportId, description, status: taskDraft.status, owner: taskDraft.owner, scheduleItem: taskDraft.scheduleItem, startDate: taskDraft.startDate, dueDate: taskDraft.dueDate, percentComplete };
     onChange({ tasks: [...structuredData.tasks, task] });
     setTaskDraft({ description: "", status: "pending", owner: "", scheduleItem: "", startDate: "", dueDate: "", percentComplete: 0 });
-  };
-
-  const upsertChecklistResponse = (response: ReportChecklistResponse) => {
-    onChange({ checklistResponses: [response, ...structuredData.checklistResponses.filter((item) => item.checklistItemId !== response.checklistItemId)] });
   };
 
   return (
@@ -1718,6 +1996,7 @@ function StructuredReportEditor({
                 {equipmentDraft.photoDataUrl && <figure className="equipment-photo-preview"><img src={equipmentDraft.photoDataUrl} alt={equipmentDraft.photoFileName || "Foto do equipamento"} /><button type="button" onClick={() => setEquipmentDraft((current) => ({ ...current, photoDataUrl: "", photoFileName: "" }))}><X size={14} /></button></figure>}
                 <button className="small-primary" type="button" onClick={addEquipment}><Plus size={15} />Adicionar</button>
               </div>
+              {equipmentPhotoError && <div className="error-banner compact">{equipmentPhotoError}</div>}
             </div>
           )}
           <EquipmentEntryList
@@ -1731,28 +2010,22 @@ function StructuredReportEditor({
       )}
       {afterEquipment}
       {enabledItems.includes("occurrence") && (
-        <StructuredPanel title="Ocorrências" hint="Classifique impedimentos, desvios ou alertas registrados no RDO.">
-          {!locked && <div className="structured-form-row"><label>Tipo sugerido<select value={occurrenceDraft.catalogItemId} onChange={(event) => setOccurrenceDraft((current) => ({ ...current, catalogItemId: event.target.value }))}><option value="">Sem sugestão</option>{activeOccurrences.map((item) => <option value={item.id} key={item.id}>{item.description}</option>)}</select></label><label>Nova ocorrência<input placeholder="Ex: Atraso de fornecedor" value={occurrenceDraft.description} onChange={(event) => setOccurrenceDraft((current) => ({ ...current, description: event.target.value }))} /></label><label>Criticidade<select value={occurrenceDraft.severity} onChange={(event) => setOccurrenceDraft((current) => ({ ...current, severity: event.target.value as ReportOccurrenceEntry["severity"] }))}><option value="info">Informativa</option><option value="attention">Atenção</option><option value="critical">Crítica</option></select></label><button className="small-primary" type="button" onClick={addOccurrence}><Plus size={15} />Adicionar</button></div>}
-          <StructuredRows rows={structuredData.occurrenceEntries.map((entry) => ({ id: entry.id, main: entry.description, meta: `${occurrenceSeverityLabel(entry.severity)}${entry.notes ? ` / ${entry.notes}` : ""}` }))} locked={locked} onRemove={(id) => onChange({ occurrenceEntries: structuredData.occurrenceEntries.filter((entry) => entry.id !== id) })} />
-        </StructuredPanel>
+        <OccurrencesMarco
+          locked={locked}
+          reportId={reportId}
+          occurrenceTypes={activeOccurrences}
+          entries={structuredData.occurrenceEntries}
+          onChange={(occurrenceEntries) => onChange({ occurrenceEntries })}
+        />
       )}
       {enabledItems.includes("checklist") && (
-        <StructuredPanel title="Checklist" hint="As respostas ficam vinculadas ao RDO e aparecem na analise de dados.">
-          <div className="checklist-response-grid">
-            {activeChecklists.flatMap((checklist) => checklist.items.map((item) => {
-              const existing = structuredData.checklistResponses.find((response) => response.checklistItemId === item.id);
-              return (
-                <label className="checklist-response" key={item.id}>
-                  <span>{item.question}</span>
-                  <select disabled={locked} value={existing?.answer ?? ""} onChange={(event) => upsertChecklistResponse({ id: existing?.id ?? makeLocalId("checklist-response"), reportId, checklistId: checklist.id, checklistItemId: item.id, itemLabel: item.itemLabel, question: item.question, answer: event.target.value, compliant: event.target.value.toLowerCase().includes("match") || event.target.value.toLowerCase().includes("atende"), notes: existing?.notes ?? "" })}>
-                    <option value="">Responder</option>
-                    {item.answers.map((answer) => <option value={answer} key={answer}>{answer}</option>)}
-                  </select>
-                </label>
-              );
-            }))}
-          </div>
-        </StructuredPanel>
+        <ChecklistMarco
+          locked={locked}
+          reportId={reportId}
+          checklists={activeChecklists}
+          responses={structuredData.checklistResponses}
+          onChange={(checklistResponses) => onChange({ checklistResponses })}
+        />
       )}
       {afterChecklist}
       <StructuredPanel title="Lista de tarefas" hint="Pendências criadas aqui alimentam a aba Análise de dados > Lista de tarefas.">
@@ -1828,14 +2101,20 @@ function laborEntryFunctionValue(entry: ReportLaborEntry, options: LaborFunction
 
 function EquipmentEntryList({ entries, locked, rentalCompanyOptions, onUpdate, onRemove }: { entries: ReportEquipmentEntry[]; locked: boolean; rentalCompanyOptions: string[]; onUpdate: (id: string, updates: Partial<ReportEquipmentEntry>) => void; onRemove: (id: string) => void }) {
   const [editingId, setEditingId] = useState("");
+  const [photoError, setPhotoError] = useState("");
   if (entries.length === 0) return <span className="muted-text">Nenhum equipamento informado.</span>;
 
   const handlePhotoChange = async (entryId: string, event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (!file) return;
-    const dataUrl = await fileToDataUrl(file);
-    onUpdate(entryId, { photoDataUrl: dataUrl, photoFileName: file.name });
+    try {
+      setPhotoError("");
+      const dataUrl = await fileToDataUrl(file);
+      onUpdate(entryId, { photoDataUrl: dataUrl, photoFileName: file.name });
+    } catch (uploadError) {
+      setPhotoError(uploadError instanceof Error ? uploadError.message : "Não foi possível carregar a foto.");
+    }
   };
 
   return (
@@ -1868,6 +2147,7 @@ function EquipmentEntryList({ entries, locked, rentalCompanyOptions, onUpdate, o
                   <label className="upload-button"><Camera size={16} />{entry.photoFileName || "Foto do equipamento"}<input type="file" accept="image/*" onChange={(event) => void handlePhotoChange(entry.id, event)} /></label>
                   {entry.photoDataUrl && <button type="button" onClick={() => onUpdate(entry.id, { photoDataUrl: "", photoFileName: "" })}><X size={15} /></button>}
                 </div>
+                {photoError && <div className="error-banner compact">{photoError}</div>}
                 <button type="button" aria-label={`Remover ${entry.description}`} onClick={() => onRemove(entry.id)}><X size={15} /></button>
               </>
             ) : (
@@ -2236,22 +2516,66 @@ function CatalogItemModal({ kind, item, onClose, onSave }: { kind: CatalogKind; 
 }
 
 function ChecklistModal({ checklist, onClose, onSave }: { checklist?: ChecklistTemplate; onClose: () => void; onSave: (payload: ChecklistPayload) => Promise<void> }) {
-  const [form, setForm] = useState<ChecklistPayload>({ name: checklist?.name ?? "", status: checklist?.status ?? "active", items: checklist?.items ?? [{ id: "item-1", order: 1, itemLabel: "1º Item", question: "", answerType: "checkbox", allowMultipleResponses: false, answers: ["Atende", "Não atende", "Não aplicável"] }] });
-  const firstItem = form.items[0];
-  const updateItem = (updates: Partial<typeof firstItem>) => setForm((current) => ({ ...current, items: [{ ...current.items[0], ...updates }] }));
+  const [form, setForm] = useState<ChecklistPayload>({ name: checklist?.name ?? "", status: checklist?.status ?? "active", items: checklist?.items.length ? checklist.items : [createChecklistItemDraft(1)] });
+  const updateItem = (id: string, updates: Partial<ChecklistTemplate["items"][number]>) => setForm((current) => ({ ...current, items: current.items.map((item) => item.id === id ? { ...item, ...updates } : item) }));
+  const addItem = () => setForm((current) => ({ ...current, items: [...current.items, createChecklistItemDraft(current.items.length + 1)] }));
+  const removeItem = (id: string) => setForm((current) => ({
+    ...current,
+    items: current.items.length === 1 ? current.items : current.items.filter((item) => item.id !== id).map((item, index) => ({ ...item, order: index + 1 }))
+  }));
+  const savePayload = () => onSave({
+    ...form,
+    items: form.items.map((item, index) => ({
+      ...item,
+      order: index + 1,
+      itemLabel: item.itemLabel || `${index + 1}º Item`,
+      answers: ["checkbox", "single_choice", "multiple_choice"].includes(item.answerType) && item.answers.length === 0 ? ["Atende", "Não atende", "Não aplicável"] : item.answers
+    }))
+  });
+
   return (
-    <SimpleFormModal title={checklist ? "Editar checklist" : "Adicionar checklist"} onClose={onClose} onSave={() => onSave(form)} wide>
-      <Field label="Nome *" value={form.name} onChange={(value) => setForm((current) => ({ ...current, name: value }))} />
-      <div className="checklist-card">
-        <strong>1º Item</strong>
-        <Field label="Item" value={firstItem.itemLabel} onChange={(value) => updateItem({ itemLabel: value })} />
-        <Field label="Pergunta *" value={firstItem.question} onChange={(value) => updateItem({ question: value })} />
-        <SelectField label="Tipo de resposta" value={firstItem.answerType} onChange={(value) => updateItem({ answerType: value })} options={[["checkbox", "Checkbox"], ["text", "Texto"], ["number", "Número"], ["single_choice", "Escolha única"], ["multiple_choice", "Múltipla escolha"]]} />
-        <label className="check-line"><input type="checkbox" checked={firstItem.allowMultipleResponses} onChange={(event) => updateItem({ allowMultipleResponses: event.target.checked })} /> Permitir múltiplas respostas</label>
-        <Field label="Respostas" value={firstItem.answers.join(", ")} onChange={(value) => updateItem({ answers: value.split(",").map((answer) => answer.trim()).filter(Boolean) })} />
+    <SimpleFormModal title={checklist ? "Editar checklist" : "Adicionar checklist"} onClose={onClose} onSave={savePayload} wide>
+      <div className="checklist-builder-title">
+        <Field label="Nome do checklist *" value={form.name} onChange={(value) => setForm((current) => ({ ...current, name: value }))} />
+        <SelectField label="Status" value={form.status} onChange={(value) => setForm((current) => ({ ...current, status: value as "active" | "inactive" }))} options={[["active", "Ativo"], ["inactive", "Inativo"]]} />
       </div>
+      <div className="checklist-builder">
+        {form.items.map((item, index) => (
+          <div className="checklist-builder-card" key={item.id}>
+            <div className="checklist-builder-card-header">
+              <strong>{item.itemLabel || `${index + 1}º Item`}</strong>
+              <button type="button" disabled={form.items.length === 1} onClick={() => removeItem(item.id)} aria-label="Remover pergunta"><X size={15} /></button>
+            </div>
+            <Field label="Título do item" value={item.itemLabel} onChange={(value) => updateItem(item.id, { itemLabel: value })} />
+            <Field label="Pergunta *" value={item.question} onChange={(value) => updateItem(item.id, { question: value })} />
+            <SelectField
+              label="Tipo de resposta"
+              value={item.answerType}
+              onChange={(value) => updateItem(item.id, { answerType: value, allowMultipleResponses: value === "multiple_choice" })}
+              options={[["checkbox", "Checklist/Conformidade"], ["text", "Texto"], ["number", "Número"], ["date", "Data"], ["single_choice", "Escolha única"], ["multiple_choice", "Múltipla escolha"]]}
+            />
+            {["checkbox", "single_choice", "multiple_choice"].includes(item.answerType) && (
+              <Field label="Opções de resposta" value={item.answers.join(", ")} onChange={(value) => updateItem(item.id, { answers: value.split(",").map((answer) => answer.trim()).filter(Boolean) })} placeholder="Atende, Não atende, Não aplicável" />
+            )}
+            <label className="check-line"><input type="checkbox" checked={item.allowMultipleResponses} onChange={(event) => updateItem(item.id, { allowMultipleResponses: event.target.checked })} /> Permitir múltiplas respostas</label>
+          </div>
+        ))}
+      </div>
+      <button className="secondary-action" type="button" onClick={addItem}><Plus size={16} />Adicionar pergunta</button>
     </SimpleFormModal>
   );
+}
+
+function createChecklistItemDraft(order: number): ChecklistTemplate["items"][number] {
+  return {
+    id: makeLocalId("checklist-item"),
+    order,
+    itemLabel: `${order}º Item`,
+    question: "",
+    answerType: "checkbox",
+    allowMultipleResponses: false,
+    answers: ["Atende", "Não atende", "Não aplicável"]
+  };
 }
 
 function SignatureModal({ onClose }: { onClose: () => void }) {
@@ -2446,7 +2770,7 @@ function AnalysisPage({ view, reports, projects, onOpenReport, onNavigate }: { v
     ...report.structuredData.laborEntries.map((entry) => ({ report, type: "Mão de obra", description: entry.description, value: laborEntrySummary(entry) })),
     ...report.structuredData.equipmentEntries.map((entry) => ({ report, type: "Equipamento", description: entry.description, value: equipmentEntrySummary(entry) })),
     ...report.structuredData.activityEntries.map((entry) => ({ report, type: "Atividade", description: entry.description, value: activitySummary(entry) })),
-    ...report.structuredData.occurrenceEntries.map((entry) => ({ report, type: "Ocorrência", description: entry.description, value: occurrenceSeverityLabel(entry.severity) })),
+    ...report.structuredData.occurrenceEntries.map((entry) => ({ report, type: "Ocorrência", description: entry.description, value: occurrenceEntrySummary(entry) })),
     ...report.structuredData.checklistResponses.map((entry) => ({ report, type: "Checklist", description: entry.question, value: entry.answer })),
     ...report.structuredData.tasks.map((task) => ({ report, type: "Tarefa", description: task.scheduleItem ? `${task.scheduleItem} - ${task.description}` : task.description, value: `${taskStatusLabel(task.status)} / ${task.percentComplete ?? 0}%` }))
   ]);
@@ -2618,8 +2942,47 @@ function ChatHubPage({ selectedProject }: { selectedProject?: Project }) {
   );
 }
 
-function ProjectSidebar({ project, reportsCount, active, onBack, onOverview, onReports, onSearch, onEdit }: { project: Project; reportsCount: number; active: "overview" | "search"; onBack: () => void; onOverview: () => void; onReports: () => void; onSearch: () => void; onEdit: () => void }) {
-  return <aside className="project-sidebar"><button className="back-title" onClick={onBack}><ArrowLeft size={18} />{project.name}</button><div className="project-placeholder"><ClipboardCheck size={54} /></div><button className={active === "overview" ? "side-link active" : "side-link"} onClick={onOverview}><BarChart3 size={16} />Visão geral</button><button className="side-link" onClick={onReports}><ClipboardList size={16} />Relatórios <span>{reportsCount}</span></button><button className={active === "search" ? "side-link active" : "side-link"} onClick={onSearch}><Search size={16} />Filtro de busca</button><button className="side-link" onClick={onEdit}><Edit3 size={16} />Editar obra</button></aside>;
+type ProjectChecklistGroup = {
+  id: string;
+  report: Report;
+  checklistId: string;
+  checklistName: string;
+};
+
+function buildProjectChecklistGroups(reports: Report[], checklists: ChecklistTemplate[]): ProjectChecklistGroup[] {
+  return reports
+    .flatMap((report) => {
+      const grouped = new Map<string, ReportChecklistResponse[]>();
+      for (const response of report.structuredData.checklistResponses) {
+        const key = response.checklistId || "sem-vinculo";
+        grouped.set(key, [...(grouped.get(key) ?? []), response]);
+      }
+
+      return Array.from(grouped.entries())
+        .filter(([, responses]) => responses.some((response) => response.answer.trim()))
+        .map(([checklistId, responses]) => {
+          const checklist = checklists.find((item) => item.id === checklistId);
+
+          return {
+            id: `${report.id}-${checklistId}`,
+            report,
+            checklistId,
+            checklistName: checklist?.name ?? responses[0]?.itemLabel ?? "Checklist sem cadastro"
+          };
+        });
+    })
+    .sort((a, b) => b.report.reportDate.localeCompare(a.report.reportDate) || b.report.number - a.report.number || a.checklistName.localeCompare(b.checklistName));
+}
+
+function countAnsweredChecklistGroups(reports: Report[]) {
+  return reports.reduce((total, report) => {
+    const checklistIds = new Set(report.structuredData.checklistResponses.filter((response) => response.answer.trim()).map((response) => response.checklistId || "sem-vinculo"));
+    return total + checklistIds.size;
+  }, 0);
+}
+
+function ProjectSidebar({ project, reportsCount, checklistsCount, active, onBack, onOverview, onReports, onSearch, onChecklists, onEdit }: { project: Project; reportsCount: number; checklistsCount: number; active: "overview" | "search" | "checklists"; onBack: () => void; onOverview: () => void; onReports: () => void; onSearch: () => void; onChecklists: () => void; onEdit: () => void }) {
+  return <aside className="project-sidebar"><button className="back-title" onClick={onBack}><ArrowLeft size={18} />{project.name}</button><div className="project-placeholder"><ClipboardCheck size={54} /></div><button className={active === "overview" ? "side-link active" : "side-link"} onClick={onOverview}><BarChart3 size={16} />Visão geral</button><button className="side-link" onClick={onReports}><ClipboardList size={16} />Relatórios <span>{reportsCount}</span></button><button className={active === "checklists" ? "side-link active" : "side-link"} onClick={onChecklists}><ListChecks size={16} />Checklists <span>{checklistsCount}</span></button><button className={active === "search" ? "side-link active" : "side-link"} onClick={onSearch}><Search size={16} />Filtro de busca</button><button className="side-link" onClick={onEdit}><Edit3 size={16} />Editar obra</button></aside>;
 }
 
 function ProjectInfo({ project }: { project: Project }) {
@@ -2743,11 +3106,6 @@ function catalogKindLabel(kind: CatalogKind) {
   return kind === "labor" ? "Mão de obra" : kind === "equipment" ? "Equipamento" : "Tipo de ocorrência";
 }
 
-function occurrenceSeverityLabel(severity: ReportOccurrenceEntry["severity"]) {
-  const labels: Record<ReportOccurrenceEntry["severity"], string> = { info: "Informativa", attention: "Atenção", critical: "Crítica" };
-  return labels[severity];
-}
-
 function taskStatusLabel(status: ReportTask["status"]) {
   const labels: Record<ReportTask["status"], string> = { pending: "Pendente", in_progress: "Em andamento", completed: "Concluída" };
   return labels[status];
@@ -2757,7 +3115,12 @@ function makeLocalId(prefix: string) {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
+const maxLocalFileBytes = 8 * 1024 * 1024;
+
 function fileToDataUrl(file: File) {
+  if (file.size > maxLocalFileBytes) {
+    throw new Error("Arquivo muito grande. Use um arquivo de até 8 MB.");
+  }
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result));

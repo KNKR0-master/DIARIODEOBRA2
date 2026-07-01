@@ -196,7 +196,7 @@ export const reports: Report[] = [
         { id: "report-draft-1-equipment-2", reportId: "report-draft-1", catalogItemId: "equipment-7", description: "Pá Carregadeira", quantity: 1, hours: 2, originType: "own", originDetail: "", rentalDate: "", returnDeadline: "", rentalCompany: "", returnAlertEnabled: false, returnAlertDaysBefore: 3, photoDataUrl: "", photoFileName: "", notes: "" }
       ],
       occurrenceEntries: [
-        { id: "report-draft-1-occurrence-1", reportId: "report-draft-1", description: "Sem ocorrências críticas registradas", severity: "info", notes: "" }
+        { id: "report-draft-1-occurrence-1", reportId: "report-draft-1", description: "Sem ocorrências críticas registradas", severity: "info", startTime: "", endTime: "", photoDataUrl: "", photoFileName: "", notes: "" }
       ],
       checklistResponses: [
         { id: "report-draft-1-checklist-1", reportId: "report-draft-1", checklistId: "checklist-quality", checklistItemId: "checklist-quality-1", itemLabel: "1 Item", question: "O serviço executado está conforme?", answer: "Matches", compliant: true, notes: "Conferência visual realizada." }

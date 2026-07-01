@@ -144,6 +144,7 @@ This layer is not production runtime. It is a product discovery and validation w
 - Project settings.
 - Project predefined labor.
 - Project predefined equipment.
+- Answered checklist index grouped from RDO checklist responses.
 
 ### Report
 
@@ -152,7 +153,11 @@ This layer is not production runtime. It is a product discovery and validation w
 - Report section.
 - Structured climate value stored in the weather section JSON.
 - Structured labor entries with own/outsourced source and optional service provider.
-- Structured equipment, occurrence, checklist, task, photo, video, and attachment records.
+- Structured equipment entries with origin, rental metadata, return alerts, and photo evidence.
+- Structured occurrence entries with type, description, time window, and photo evidence.
+- Structured activity entries linked to labor and equipment records.
+- Checklist responses from customizable checklist templates, allowing partial drafts.
+- Structured task, photo, video, and attachment records.
 - Report approval.
 - Report PDF.
 - Report amendment.
@@ -216,6 +221,8 @@ Rules:
 - Restrict CORS to known local or configured origins.
 - Require `DEFAULT_ADMIN_PASSWORD` in production instead of using the development fallback password.
 - Limit large attachment payloads and fail external provider requests with a timeout.
+- Cap local file reads before base64 conversion and show controlled upload/read errors in the frontend.
+- Keep dependency audit in the local validation routine; the current audit reports zero known vulnerabilities.
 
 ## Development Environments
 

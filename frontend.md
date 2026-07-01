@@ -54,6 +54,7 @@ Project sidebar:
 
 - Overview.
 - Reports.
+- Checklists.
 - Search filter.
 - Edit project.
 
@@ -117,6 +118,7 @@ Main features:
 - Recent reports panel.
 - Recent photos panel.
 - Project information panel.
+- Answered checklists tab with checklist title, response date, RDO number, and action to open the source RDO.
 
 Project information:
 
@@ -176,8 +178,8 @@ Current "Marco 1" visual organization:
 
 Structured RDO inputs:
 
-- Labor, equipment, occurrences, checklist answers, and task list should be entered as structured rows linked to report data.
-- Text areas remain for activities and commentary.
+- Labor, equipment, activities, occurrences, checklist answers, and task list should be entered as structured rows linked to report data.
+- Text areas remain for commentary and other still-unstructured sections.
 - Weather conditions use structured tables for Tempo and Condições de Trabalho across Manhã, Tarde, and Noite, plus Índice Pluviométrico.
 - Weather can be suggested automatically from Open-Meteo when the project has valid coordinates. The user must validate the suggested values against the real jobsite conditions.
 - Labor and equipment catalog checkboxes in Cadastros activate or deactivate suggestions; they are not the final report entries.
@@ -185,6 +187,16 @@ Structured RDO inputs:
 - Labor function editing uses a dropdown, not free text. The dropdown includes active catalog roles and custom roles already inserted in the current report.
 - Selecting "Outra" shows the "Nova Função" input.
 - Labor entries can be marked as Própria or Terceirizada; Terceirizada entries show an Empresa prestadora field.
+
+Current structured RDO behavior:
+
+- Activities are added through a modal with description, quantity, unit, percentage, status, start/end time, and links to labor/equipment entries.
+- Equipment entries are read-only after insertion until the user clicks the pencil icon on the item.
+- Equipment entries support custom equipment, origin, rental date, return deadline, rental company, return deadline alerts, photo evidence, saved custom equipment options, and saved rental-company suggestions.
+- Occurrences are added through a modal with occurrence type, free description, start/end time, and optional photo.
+- Checklist answers are filled through a modal that reads active templates from Cadastros > Checklist.
+- The project Checklists tab lists answered checklists only as title, response/report date, and RDO number; full answers remain inside the source RDO.
+- Local file reads used for RDO evidence are capped before base64 conversion and show an inline error when a file is too large or cannot be read.
 
 ### Report Chat Hub
 

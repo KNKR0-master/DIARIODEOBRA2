@@ -75,6 +75,10 @@ Implemented screens:
 - Project form with latitude/longitude and browser/mobile geolocation helper.
 - Weather suggestion button connected to Open-Meteo through the backend.
 - Mão de Obra editor with pencil-based editing, function dropdown, report-local custom functions, own/outsourced classification, and service provider field.
+- Equipamentos editor with pencil-based editing, custom equipment reuse, origin, rental metadata, return-deadline alerts, rental-company suggestions, and photo evidence.
+- Atividades Executadas editor with modal-based structured entries linked to labor and equipment.
+- Ocorrências editor with modal-based occurrence type, free description, start/end time, and optional photo.
+- Checklist builder in Cadastros plus RDO checklist response modal and project-level answered-checklists index.
 
 Not implemented yet:
 

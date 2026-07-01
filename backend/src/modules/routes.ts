@@ -143,6 +143,10 @@ const updateReportSchema = z.object({
           catalogItemId: z.string().optional(),
           description: z.string().min(1),
           severity: z.enum(["info", "attention", "critical"]).default("info"),
+          startTime: z.string().optional().default(""),
+          endTime: z.string().optional().default(""),
+          photoDataUrl: z.string().max(maxAttachmentDataUrlLength).optional().default(""),
+          photoFileName: z.string().optional().default(""),
           notes: z.string().optional().default("")
         })
       ),
@@ -153,7 +157,7 @@ const updateReportSchema = z.object({
           checklistItemId: z.string().optional(),
           itemLabel: z.string().min(1),
           question: z.string().min(1),
-          answer: z.string().min(1),
+          answer: z.string().optional().default(""),
           compliant: z.boolean().optional(),
           notes: z.string().optional().default("")
         })
@@ -389,6 +393,10 @@ const normalizeStructuredData = (reportId: string, structuredData?: StructuredDa
     catalogItemId: entry.catalogItemId,
     description: entry.description,
     severity: entry.severity ?? "info",
+    startTime: entry.startTime ?? "",
+    endTime: entry.endTime ?? "",
+    photoDataUrl: entry.photoDataUrl ?? "",
+    photoFileName: entry.photoFileName ?? "",
     notes: entry.notes ?? ""
   })),
   checklistResponses: (structuredData?.checklistResponses ?? []).map((entry): ReportChecklistResponse => ({

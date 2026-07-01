@@ -172,6 +172,10 @@ type ReportOccurrenceEntryRow = {
   catalog_item_id: string | null;
   description: string;
   severity: ReportOccurrenceEntry["severity"];
+  start_time: string;
+  end_time: string;
+  photo_data_url: string;
+  photo_file_name: string;
   notes: string;
 };
 
@@ -500,6 +504,10 @@ function toReportOccurrenceEntry(row: ReportOccurrenceEntryRow): ReportOccurrenc
     catalogItemId: row.catalog_item_id ?? undefined,
     description: row.description,
     severity: row.severity,
+    startTime: row.start_time ?? "",
+    endTime: row.end_time ?? "",
+    photoDataUrl: row.photo_data_url ?? "",
+    photoFileName: row.photo_file_name ?? "",
     notes: row.notes
   };
 }
@@ -1262,10 +1270,10 @@ class AppDatabase {
       this.db
         .prepare(
           `INSERT INTO report_occurrence_entries (
-            id, report_id, catalog_item_id, description, severity, notes
-          ) VALUES (?, ?, ?, ?, ?, ?)`
+            id, report_id, catalog_item_id, description, severity, start_time, end_time, photo_data_url, photo_file_name, notes
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         )
-        .run(entry.id, reportId, entry.catalogItemId ?? null, entry.description, entry.severity, entry.notes);
+        .run(entry.id, reportId, entry.catalogItemId ?? null, entry.description, entry.severity, entry.startTime ?? "", entry.endTime ?? "", entry.photoDataUrl ?? "", entry.photoFileName ?? "", entry.notes);
     }
 
     for (const entry of structuredData.checklistResponses) {
@@ -1522,6 +1530,10 @@ class AppDatabase {
         catalog_item_id TEXT REFERENCES catalog_items(id),
         description TEXT NOT NULL,
         severity TEXT NOT NULL DEFAULT 'info',
+        start_time TEXT NOT NULL DEFAULT '',
+        end_time TEXT NOT NULL DEFAULT '',
+        photo_data_url TEXT NOT NULL DEFAULT '',
+        photo_file_name TEXT NOT NULL DEFAULT '',
         notes TEXT NOT NULL DEFAULT ''
       );
 
@@ -1633,6 +1645,10 @@ class AppDatabase {
     this.ensureColumn("report_equipment_entries", "return_alert_days_before", "ALTER TABLE report_equipment_entries ADD COLUMN return_alert_days_before REAL NOT NULL DEFAULT 3");
     this.ensureColumn("report_equipment_entries", "photo_data_url", "ALTER TABLE report_equipment_entries ADD COLUMN photo_data_url TEXT NOT NULL DEFAULT ''");
     this.ensureColumn("report_equipment_entries", "photo_file_name", "ALTER TABLE report_equipment_entries ADD COLUMN photo_file_name TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("report_occurrence_entries", "start_time", "ALTER TABLE report_occurrence_entries ADD COLUMN start_time TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("report_occurrence_entries", "end_time", "ALTER TABLE report_occurrence_entries ADD COLUMN end_time TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("report_occurrence_entries", "photo_data_url", "ALTER TABLE report_occurrence_entries ADD COLUMN photo_data_url TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("report_occurrence_entries", "photo_file_name", "ALTER TABLE report_occurrence_entries ADD COLUMN photo_file_name TEXT NOT NULL DEFAULT ''");
   }
 
   private ensureColumn(tableName: string, columnName: string, statement: string) {

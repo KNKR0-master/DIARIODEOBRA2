@@ -64,6 +64,11 @@ Allow a construction company to create projects, configure report templates, rec
 - Labor, equipment, occurrence, and checklist catalogs are available.
 - RDO climate conditions can be filled with structured period tables and optionally suggested from Open-Meteo using project coordinates.
 - RDO labor entries can be edited after insertion, can identify own or outsourced labor, and can record the service provider for outsourced labor.
+- RDO equipment entries support own/rented/other origin, rental metadata, return-deadline visual alerts, saved rental-company suggestions, photos, and pencil-based editing after insertion.
+- RDO occurrences are added through a modal with occurrence type, free-text description, start/end time, and an optional photo.
+- RDO activities are added through a modal with description, quantity, unit, percent, status, start/end time, and links to the labor/equipment entries used.
+- Checklist templates can be customized in Settings/Cadastros with multiple questions and answer types; RDO checklist responses are saved as structured data.
+- Project overview has a Checklists tab that lists the answered checklists for that project by checklist title, RDO number, and response date.
 - A draft report can be approved.
 - Approval locks the report.
 - Approved reports include creator, approver, signature, date/time, and audit metadata.
@@ -100,6 +105,11 @@ Allow a construction company to create projects, configure report templates, rec
 - The RDO editor now separates the main report areas into individual visual blocks and uses structured inputs for climate, labor, equipment, occurrences, checklist, tasks, media, and signature areas.
 - Climate can be suggested from Open-Meteo when a project has valid coordinates, but the user must validate the actual jobsite conditions.
 - Labor entries now support pencil-based editing, dropdown function selection, custom report-level functions, own/outsourced classification, and outsourced service provider names.
+- Equipment entries now support rental metadata, return deadline notification coloring, photo evidence, custom equipment capture, saved rental-company suggestions, and pencil-based editing.
+- Occurrences now support a dedicated add modal, occurrence-type selection, free description, start/end time, and per-occurrence photo evidence.
+- Activities now use structured activity records and can link to the labor and equipment entries used in that activity.
+- Checklists now have a Google Forms-inspired builder in Cadastros, a modal response flow inside the RDO, and an answered-checklists index in the project sidebar.
+- Recent hardening: partial checklist drafts can be saved, checklist indexes ignore completely empty response groups, local file uploads are capped before base64 conversion, dependency audit is clean, and obsolete frontend code/CSS was removed.
 - Real PDF generation, WhatsApp intake, audio transcription, password recovery, persistent rate limiting, and per-project permissions remain next-stage work.
 
 ## Implementation Gate

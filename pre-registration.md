@@ -150,6 +150,17 @@ Actions:
 - Delete.
 - Import/export later.
 
+Report entry behavior:
+
+- The global equipment list provides reusable equipment options for RDO entries.
+- Users can choose "Outro" in the RDO editor to type a new equipment name.
+- Custom equipment inserted in an RDO is added to the available equipment suggestions for future launches.
+- Each report equipment entry can store origin as own, rented, or other.
+- Rented equipment can store rental date, return deadline, rental company, and return-deadline alert settings.
+- Rental company names typed in the RDO are saved as suggestions for later rented equipment entries.
+- Equipment entries can store a photo for visual identification in the report.
+- Inserted equipment entries can be edited only after the user clicks the pencil icon.
+
 ## Occurrence Types
 
 Purpose: predefined incident, blocker, or event categories used in reports.
@@ -185,6 +196,12 @@ Actions:
 - Delete.
 - Import/export later.
 
+Report entry behavior:
+
+- RDO occurrences are created through an "Adicionar Ocorrência" modal.
+- Each occurrence stores the selected type, a free-text description, start/end time, and optional photo evidence.
+- The default list is used as the dropdown source, but the user's own description remains preserved in the report.
+
 ## Checklist
 
 Purpose: reusable checklist templates that can be attached to report templates or project reports.
@@ -208,16 +225,12 @@ Checklist item fields:
 - Allow multiple responses.
 - Answers.
 
-Initial answer type:
+Current answer types:
 
-- Checkbox.
-
-Future answer types:
-
+- Checklist/conformity.
 - Text.
 - Number.
 - Date.
-- Photo.
 - Single choice.
 - Multiple choice.
 
@@ -230,11 +243,21 @@ Default answer values:
 Actions:
 
 - Add checklist.
-- Add item.
-- Duplicate item.
-- Edit item.
-- Delete item.
-- Reorder items.
+- Edit checklist.
+- Add question.
+- Remove question.
+- Configure answer type.
+- Configure answer options.
+- Allow multiple responses.
+- Save.
+
+RDO behavior:
+
+- Active checklists appear in the Checklist area of the RDO.
+- The user answers a checklist through a modal opened from the report editor.
+- Checklist responses are saved as structured report data.
+- The project-level Checklists tab lists answered checklists by title, response/report date, and RDO number only.
+- Full checklist answers remain available inside the source RDO.
 - Save.
 
 ## Project-Level Predefined Labor

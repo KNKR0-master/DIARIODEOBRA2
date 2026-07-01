@@ -306,6 +306,16 @@ Stage 7 refines the RDO editor and security baseline:
 - Labor entries store whether the workforce is Própria or Terceirizada. Terceirizada entries can store the service provider company name.
 - API robustness improved: restricted CORS origins, safer API response parsing, Open-Meteo timeout, coordinate range validation, attachment payload size limit, and production requirement for `DEFAULT_ADMIN_PASSWORD`.
 
+Stage 8 refines the remaining structured RDO Marcos and checklist visibility:
+
+- Equipamentos now supports custom equipment reuse, own/rented/other origin, rental date, return deadline, rental company suggestions, return-deadline alerts, equipment photo, and pencil-based editing.
+- Atividades Executadas now uses structured modal entries with description, quantity, unit, percentage, status, start/end time, and links to labor/equipment entries.
+- Ocorrências now uses an add modal with occurrence type, free-text description, start/end time, and optional photo evidence.
+- Cadastros > Checklist now works as a Google Forms-inspired checklist builder with multiple questions and configurable answer types.
+- The RDO Checklist area opens checklist response modals from active templates.
+- The project sidebar now includes Checklists, listing answered checklists by title, response/report date, and RDO number while keeping full answers inside the source RDO.
+- Recent hardening allows partial checklist drafts without polluting the project checklist index, caps local evidence uploads before base64 conversion, removes obsolete frontend code/CSS, and leaves `npm audit` with zero known vulnerabilities.
+
 ## Future Scope
 
 - Photo analysis.

@@ -93,6 +93,10 @@ export interface ReportOccurrenceEntry {
   catalogItemId?: string;
   description: string;
   severity: "info" | "attention" | "critical";
+  startTime: string;
+  endTime: string;
+  photoDataUrl: string;
+  photoFileName: string;
   notes: string;
 }
 

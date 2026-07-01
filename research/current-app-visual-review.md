@@ -30,7 +30,12 @@ Current local URL: http://127.0.0.1:5188
 - RDO editor organized into separate orange-accented blocks for each major report area.
 - Condições Climáticas block with compact side-by-side tables and automatic weather suggestion action.
 - Mão de Obra block with read-only inserted entries, pencil edit action, function dropdown, custom report-level functions, own/outsourced origin, and service provider field.
-- Structured equipment, occurrence, checklist, and task entry areas.
+- Equipamentos block with pencil edit action, custom equipment reuse, origin, rental metadata, deadline alert coloring, rental-company suggestions, and photo evidence.
+- Atividades block with structured modal entries linked to labor and equipment.
+- Ocorrências block with structured modal entries, occurrence type dropdown, free description, time range, and optional photo.
+- Checklist block with response modal fed by the Cadastros checklist builder.
+- Project-level Checklists tab listing answered checklists by title, response/report date, and RDO number.
+- Structured task entry area.
 - Media areas separated into Fotos, Vídeos, and Anexos blocks.
 - Approval sidebar with timeline, audit events, signature/PDF/hash metadata.
 - Cadastros profile/signature area, users, report templates, catalogs, project groups, checklist, and predefined labor/equipment placeholders.

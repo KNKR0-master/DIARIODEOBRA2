@@ -106,10 +106,11 @@ The RDO stores operational fields in normalized tables instead of only text bloc
 Structured tables:
 
 - Report labor entries: catalog suggestion, description, quantity, unit, source type, service provider, notes.
-- Report equipment entries: catalog suggestion, description, quantity, hours, notes.
-- Report occurrence entries: occurrence type suggestion, severity, notes.
-- Report checklist responses: checklist item, answer, compliance flag, notes.
-- Report tasks: action description, status, owner, due date.
+- Report equipment entries: catalog suggestion, description, quantity, origin type/detail, rental date, return deadline, rental company, return alert settings, photo data/file name, notes.
+- Report occurrence entries: occurrence type suggestion, description, severity, start/end time, photo data/file name, notes.
+- Report checklist responses: checklist/template item, answer, compliance flag, notes.
+- Report activities: description, quantity, unit, percent complete, status, start/end time, linked labor entry IDs, linked equipment entry IDs.
+- Report tasks: action description, status, owner, schedule item, start date, due date, percent complete.
 
 Catalog items remain reusable suggestions. Labor and equipment suggestions can be active or inactive so each company can keep only the options it uses while still adding custom functions, equipment, and categories.
 
@@ -120,6 +121,33 @@ Current labor behavior:
 - Function selection is dropdown-based and can include catalog suggestions plus report-local custom functions.
 - `sourceType` distinguishes own labor (`own`) from outsourced labor (`outsourced`).
 - `serviceProvider` stores the outsourced company name when applicable.
+
+Current equipment behavior:
+
+- Equipment entries are copied between reports as structured records.
+- Inserted equipment entries can be edited only after the frontend user clicks the pencil icon.
+- Custom equipment typed through "Outro" is captured for reuse in later launches.
+- `originType` distinguishes own, rented, and other equipment origins.
+- Rented equipment can store rental date, return deadline, rental company, and return-alert settings.
+- Rental company names typed in the RDO are collected as suggestions for later rented equipment entries.
+- Equipment entries can store a photo reference/data URL for visual identification in the RDO.
+
+Current activity behavior:
+
+- Activities are structured records instead of a single open text block.
+- Each activity can store description, quantity, unit, percent complete, status, start/end time, linked labor entries, and linked equipment entries.
+
+Current occurrence behavior:
+
+- Occurrences are structured records created through the RDO occurrence modal.
+- Each occurrence can store type, free description, start/end time, and optional photo evidence.
+
+Current checklist behavior:
+
+- Checklist templates are managed from Cadastros and can include multiple question types.
+- Checklist responses are saved per RDO as structured records.
+- Empty answers are accepted so partial checklist drafts can be saved.
+- Project-level checklist indexes only count checklist groups with at least one non-empty answer.
 
 ### Weather Automation
 
@@ -348,6 +376,8 @@ Implemented:
 - Development admin fallback password is `Jonas123`; production requires `DEFAULT_ADMIN_PASSWORD`.
 - State-changing routes require authentication and CSRF protection.
 - Attachment payloads have a size cap.
+- Frontend file reads used for local evidence are capped before base64 conversion, with inline errors for oversized or unreadable files.
+- Dependency audit was refreshed with `npm audit fix`; the current audit reports zero known vulnerabilities.
 
 Pending:
 

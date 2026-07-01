@@ -46,7 +46,7 @@
 - Add labor entry pencil editing, function dropdown, custom function option, own/outsourced source, and service provider. Status: done.
 - Add PDF-ready state.
 - Add signature capture/upload UI.
-- Add checklist builder behavior.
+- Add checklist builder behavior. Status: done, including RDO response modal and project-level answered-checklists index.
 - Add loading/error/empty states. Status: partially implemented.
 - Add mobile-specific QA pass for dense RDO forms.
 
